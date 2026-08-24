@@ -227,17 +227,18 @@ export default function Dashboard() {
     } else if (selectedRoleGroup === "Spreadsheet") {
       recipientsList = data.filter((_, idx) => selectedContacts[idx]);
     } else if (selectedRoleGroup === "Custom") {
-      if (!customContact.phone || !customContact.email) {
-        return toast.error("Please fill in the custom recipient phone and email.");
+      if (!customContact.phone) {
+        return toast.error("Please fill in the custom recipient phone number.");
       }
-      recipientsList = [customContact];
+      recipientsList = [{ ...customContact, email: "" }];
     }
 
     if (recipientsList.length === 0) {
       return toast.error("Please select at least one recipient to send.");
     }
 
-    if (sendEmail && (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass)) {
+    const finalSendEmail = dashboardTab === "directory" ? false : sendEmail;
+    if (finalSendEmail && (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass)) {
       return toast.error("Please configure SMTP settings in the left pane of Tab 1.");
     }
 
@@ -252,8 +253,8 @@ export default function Dashboard() {
         body: JSON.stringify({
           recipients: recipientsList,
           messageText: broadcastMessage,
-          sendWhatsApp,
-          sendEmail,
+          sendWhatsApp: dashboardTab === "directory" ? true : sendWhatsApp,
+          sendEmail: dashboardTab === "directory" ? false : sendEmail,
           smtpConfig,
           emailSubject: broadcastSubject,
           role: selectedRoleGroup === "Custom" || selectedRoleGroup === "Spreadsheet" ? "Custom" : selectedRoleGroup,
@@ -1395,7 +1396,7 @@ export default function Dashboard() {
                 <h4 className="text-xs font-bold flex items-center gap-1.5 text-emerald-500">
                   <UserPlus className="w-4 h-4" /> Send Message to Specific Recipient
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-[10px] font-semibold text-slate-400 mb-1">Name</label>
                     <input
@@ -1414,16 +1415,6 @@ export default function Dashboard() {
                       onChange={(e) => setCustomContact({ ...customContact, phone: e.target.value })}
                       className={`w-full px-3 py-2 rounded-xl outline-none text-xs ${isDark ? "dark-input text-emerald-400 font-bold" : "light-input font-bold"}`}
                       placeholder="919876543210"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-400 mb-1">Email Address</label>
-                    <input
-                      type="email"
-                      value={customContact.email}
-                      onChange={(e) => setCustomContact({ ...customContact, email: e.target.value })}
-                      className={`w-full px-3 py-2 rounded-xl outline-none text-xs ${isDark ? "dark-input" : "light-input"}`}
-                      placeholder="john@example.com"
                     />
                   </div>
                 </div>
@@ -1466,7 +1457,6 @@ export default function Dashboard() {
                           <th className="px-4 py-2 w-10 text-center">Select</th>
                           <th className="px-4 py-2">Name</th>
                           <th className="px-4 py-2">Phone (Masked)</th>
-                          <th className="px-4 py-2">Email (Masked)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800 font-mono text-[11px]">
@@ -1497,7 +1487,6 @@ export default function Dashboard() {
                                 </td>
                                 <td className="px-4 py-2.5 text-slate-300 font-semibold">{contact.name}</td>
                                 <td className="px-4 py-2.5 text-slate-300">{maskPhoneNumber(contact.phone)}</td>
-                                <td className="px-4 py-2.5 text-slate-400">{maskEmailAddress(contact.email)}</td>
                               </tr>
                             ))
                         )}
