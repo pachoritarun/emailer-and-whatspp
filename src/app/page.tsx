@@ -261,8 +261,18 @@ export default function Dashboard() {
         }),
       });
 
+      if (!response.ok) {
+        let errMsg = `Server returned status ${response.status}`;
+        try {
+          const errRes = await response.json();
+          if (errRes && errRes.error) errMsg = errRes.error;
+          else if (errRes && errRes.message) errMsg = errRes.message;
+        } catch (_) {}
+        throw new Error(errMsg);
+      }
+
       const result = await response.json();
-      if (response.ok && result.success) {
+      if (result.success) {
         toast.success(`Broadcast completed successfully! Sent to ${recipientsList.length} recipients.`, { id: toastId });
         setBroadcastResults(result.results);
         fetchBroadcastLogs(); // refresh database history
