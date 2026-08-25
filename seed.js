@@ -1,9 +1,36 @@
-﻿const { getDbPool } = require('./src/lib/db');
+﻿const mysql = require('mysql2/promise');
 
 async function seed() {
-  console.log("Starting database seeding...");
+  console.log("Starting database initialization and seeding...");
+  
+  const host = process.env.DB_HOST || "localhost";
+  const port = parseInt(process.env.DB_PORT || "3306", 10);
+  const user = process.env.DB_USER || "root";
+  const password = process.env.DB_PASSWORD || "";
+  const database = "jecrc_broadcast";
+
   try {
-    const pool = await getDbPool();
+    // 1. Connect without database to create it
+    console.log(`Connecting to MySQL at ${user}@${host}:${port}...`);
+    const initConn = await mysql.createConnection({ host, port, user, password });
+    await initConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\``);
+    await initConn.end();
+    console.log(`Verified database '${database}'.`);
+
+    // 2. Connect to the database to create tables and insert data
+    const pool = mysql.createPool({ host, port, user, password, database });
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS contacts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        role VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_contact (email, role)
+      )
+    `);
     
     // Sample demo contacts
     const contacts = [
@@ -20,10 +47,10 @@ async function seed() {
       console.log(`Successfully seeded contact: ${c.name} as ${c.role}`);
     }
 
-    console.log("Database seeding completed successfully!");
+    console.log("Database seeded completed successfully!");
     process.exit(0);
   } catch (error) {
-    console.error("Seeding process failed:", error);
+    console.error("Seeding process failed:", error.message);
     process.exit(1);
   }
 }

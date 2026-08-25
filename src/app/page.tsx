@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
@@ -58,7 +58,7 @@ export default function Dashboard() {
 
   const [emailTemplate, setEmailTemplate] = useState({
     subject: "JECRC University - Academic Portal Access Credentials for {{name}}",
-    body: "Dear {{name}},\n\nGreetings from JECRC University Administration.\n\nYour official student registration and portal access credentials for the academic session are detailed below:\n\n• Student Name: {{name}}\n• Roll Number: {{rollNumber}}\n• Student ID: {{id}}\n• Portal Login Email: {{email}}\n• Temporary Password: {{password}}\n\nPlease log in to the official JECRC Student Portal (https://portal.jecrcu.edu.in) to reset your password and complete your registration.\n\nFor any academic queries, contact academics@jecrcu.edu.in.\n\nWarm regards,\nOffice of Academic Affairs\nJECRC University, Jaipur",
+    body: "Dear {{name}},\n\nGreetings from JECRC University Administration.\n\nYour official student registration and portal access credentials for the academic session are detailed below:\n\nâ€¢ Student Name: {{name}}\nâ€¢ Roll Number: {{rollNumber}}\nâ€¢ Student ID: {{id}}\nâ€¢ Portal Login Email: {{email}}\nâ€¢ Temporary Password: {{password}}\n\nPlease log in to the official JECRC Student Portal (https://portal.jecrcu.edu.in) to reset your password and complete your registration.\n\nFor any academic queries, contact academics@jecrcu.edu.in.\n\nWarm regards,\nOffice of Academic Affairs\nJECRC University, Jaipur",
   });
 
   const [isSending, setIsSending] = useState(false);
@@ -100,6 +100,15 @@ export default function Dashboard() {
   const [broadcastProgress, setBroadcastProgress] = useState({ sent: 0, total: 0 });
   const [broadcastResults, setBroadcastResults] = useState<any[]>([]);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
+  // Template Mode States
+  const [useTemplate, setUseTemplate] = useState(true);
+  const [metaTemplates, setMetaTemplates] = useState<{name:string;language:string;body:string;variableCount:number}[]>([]);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState<{name:string;language:string;body:string;variableCount:number}|null>(null);
+  const [templateVarValues, setTemplateVarValues] = useState<string[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [activeBroadcastId, setActiveBroadcastId] = useState<string|null>(null);
+  const [broadcastJobStats, setBroadcastJobStats] = useState<{total:number;sent:number;failed:number;pending:number}|null>(null);
 
   // Fetch contacts based on role
   const fetchContacts = async (role: string) => {
@@ -219,72 +228,125 @@ export default function Dashboard() {
   };
 
   // Trigger simultaneous broadcast
+  const fetchMetaTemplates = async () => {
+    setIsLoadingTemplates(true);
+    try {
+      const res = await fetch("/api/whatsapp/templates");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      if (data.success) {
+        setMetaTemplates(data.templates || []);
+      } else {
+        toast.error("Could not load templates: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      toast.error("Failed to fetch Meta templates. Check WHATSAPP_BUSINESS_ID in .env.local");
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  };
+
+  const pollBroadcastStatus = (broadcastId: string) => {
+    setActiveBroadcastId(broadcastId);
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/broadcast/status?id=" + broadcastId);
+        const data = await res.json();
+        if (data.success) {
+          setBroadcastJobStats(data);
+          if (Number(data.pending) === 0) {
+            clearInterval(interval);
+            setIsBroadcasting(false);
+            toast.success(`Broadcast complete! Sent: ${data.sent}, Failed: ${data.failed}`);
+          }
+        }
+      } catch {}
+    }, 3000);
+  };
+
   const handleBroadcastSend = async () => {
-    // Determine recipients
-    let recipientsList: any[] = [];
+    let recipientsList = [];
     if (selectedRoleGroup === "Faculty" || selectedRoleGroup === "Student" || selectedRoleGroup === "Alumni") {
       recipientsList = dbContacts.filter(c => selectedContacts[c.id]);
     } else if (selectedRoleGroup === "Spreadsheet") {
       recipientsList = data.filter((_, idx) => selectedContacts[idx]);
     } else if (selectedRoleGroup === "Custom") {
-      if (!customContact.phone) {
-        return toast.error("Please fill in the custom recipient phone number.");
-      }
+      if (!customContact.phone) return toast.error("Please fill in the custom recipient phone number.");
       recipientsList = [{ ...customContact, email: "" }];
     }
+    if (recipientsList.length === 0) return toast.error("Please select at least one recipient.");
 
-    if (recipientsList.length === 0) {
-      return toast.error("Please select at least one recipient to send.");
-    }
+    if (useTemplate) {
+      // Template mode: use the job queue
+      if (!selectedTemplate) return toast.error("Please select a Meta Template first.");
+      setIsBroadcasting(true);
+      setBroadcastJobStats(null);
+      const toastId = toast.loading(`Queuing ${recipientsList.length} messages...`);
+      try {
+        const res = await fetch("/api/broadcast/queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            recipients: recipientsList,
+            templateName: selectedTemplate.name,
+            templateLang: selectedTemplate.language || "en_US",
+            templateVarFields: templateVarValues,
+            role: selectedRoleGroup === "Custom" || selectedRoleGroup === "Spreadsheet" ? "Custom" : selectedRoleGroup,
+          }),
+        });
+        const result = await res.json();
+        if (result.success) {
+          toast.success(`Queued ${result.queued} messages! Broadcasting in background...`, { id: toastId });
+          pollBroadcastStatus(result.broadcastId);
+        } else {
+          toast.error("Queue failed: " + result.error, { id: toastId });
+          setIsBroadcasting(false);
+        }
 
-    const finalSendEmail = dashboardTab === "directory" ? false : sendEmail;
-    if (finalSendEmail && (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass)) {
-      return toast.error("Please configure SMTP settings in the left pane of Tab 1.");
-    }
-
-    setIsBroadcasting(true);
-    setBroadcastProgress({ sent: 0, total: recipientsList.length });
-    const toastId = toast.loading(`Broadcasting messages (0/${recipientsList.length})...`);
-
-    try {
-      const response = await fetch("/api/broadcast/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipients: recipientsList,
-          messageText: broadcastMessage,
-          sendWhatsApp: dashboardTab === "directory" ? true : sendWhatsApp,
-          sendEmail: dashboardTab === "directory" ? false : sendEmail,
-          smtpConfig,
-          emailSubject: broadcastSubject,
-          role: selectedRoleGroup === "Custom" || selectedRoleGroup === "Spreadsheet" ? "Custom" : selectedRoleGroup,
-        }),
-      });
-
-      if (!response.ok) {
-        let errMsg = `Server returned status ${response.status}`;
-        try {
-          const errRes = await response.json();
-          if (errRes && errRes.error) errMsg = errRes.error;
-          else if (errRes && errRes.message) errMsg = errRes.message;
-        } catch (_) {}
-        throw new Error(errMsg);
+      } catch (err: unknown) {
+        toast.error("Error: " + (err instanceof Error ? err.message : String(err)), { id: toastId });
       }
+    } else {
+      // Free-form text mode (existing flow, small lists only)
+      const finalSendEmail = dashboardTab === "directory" ? false : sendEmail;
+      if (finalSendEmail && (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass))
+        return toast.error("Please configure SMTP settings in Tab 1.");
+      setIsBroadcasting(true);
+      setBroadcastProgress({ sent: 0, total: recipientsList.length });
+      const toastId = toast.loading(`Broadcasting (0/${recipientsList.length})...`);
+      try {
+        const response = await fetch("/api/broadcast/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            recipients: recipientsList,
+            messageText: broadcastMessage,
+            sendWhatsApp: dashboardTab === "directory" ? true : sendWhatsApp,
+            sendEmail: dashboardTab === "directory" ? false : sendEmail,
+            smtpConfig,
+            emailSubject: broadcastSubject,
+            role: selectedRoleGroup === "Custom" || selectedRoleGroup === "Spreadsheet" ? "Custom" : selectedRoleGroup,
+          }),
+        });
+        if (!response.ok) {
+          let errMsg = `Server returned status ${response.status}`;
+          try { const e = await response.json(); if (e.error) errMsg = e.error; } catch {}
+          throw new Error(errMsg);
+        }
+        const result = await response.json();
+        if (result.success) {
+          toast.success(`Broadcast complete! Sent to ${recipientsList.length} recipients.`, { id: toastId });
+          setBroadcastResults(result.results);
+          fetchBroadcastLogs();
+        } else {
+          toast.error(`Broadcast failed: ${result.error || "Unknown"}`, { id: toastId });
+        }
 
-      const result = await response.json();
-      if (result.success) {
-        toast.success(`Broadcast completed successfully! Sent to ${recipientsList.length} recipients.`, { id: toastId });
-        setBroadcastResults(result.results);
-        fetchBroadcastLogs(); // refresh database history
-      } else {
-        toast.error(`Broadcast failed: ${result.error || "Unknown error"}`, { id: toastId });
+      } catch (error: unknown) {
+        toast.error(`Broadcast failed: ${error instanceof Error ? error.message : String(error)}`, { id: toastId });
+        setIsBroadcasting(false);
+        setBroadcastProgress({ sent: recipientsList.length, total: recipientsList.length });
       }
-    } catch (error: any) {
-      console.error(error);
-      toast.error(`Broadcast failed: ${error.message}`, { id: toastId });
-    } finally {
-      setIsBroadcasting(false);
-      setBroadcastProgress({ sent: recipientsList.length, total: recipientsList.length });
     }
   };
 
@@ -367,17 +429,17 @@ export default function Dashboard() {
     if (type === "credentials") {
       setEmailTemplate({
         subject: "JECRC University - Academic Portal Access Credentials for {{name}}",
-        body: "Dear {{name}},\n\nGreetings from JECRC University Administration.\n\nYour official student registration and portal access credentials for the academic session are detailed below:\n\n• Student Name: {{name}}\n• Roll Number: {{rollNumber}}\n• Student ID: {{id}}\n• Portal Login Email: {{email}}\n• Temporary Password: {{password}}\n\nPlease log in to the official JECRC Student Portal to complete your registration.\n\nWarm regards,\nOffice of Academic Affairs\nJECRC University, Jaipur",
+        body: "Dear {{name}},\n\nGreetings from JECRC University Administration.\n\nYour official student registration and portal access credentials for the academic session are detailed below:\n\nâ€¢ Student Name: {{name}}\nâ€¢ Roll Number: {{rollNumber}}\nâ€¢ Student ID: {{id}}\nâ€¢ Portal Login Email: {{email}}\nâ€¢ Temporary Password: {{password}}\n\nPlease log in to the official JECRC Student Portal to complete your registration.\n\nWarm regards,\nOffice of Academic Affairs\nJECRC University, Jaipur",
       });
     } else if (type === "exam") {
       setEmailTemplate({
         subject: "JECRC University - End Semester Examination Notice | {{name}}",
-        body: "Dear {{name}},\n\nThis is an official communication regarding your upcoming End Semester Examinations at JECRC University.\n\nCandidate Profile:\n• Name: {{name}}\n• Roll Number: {{rollNumber}}\n• Registered Email: {{email}}\n\nPlease ensure you carry your official University Identity Card and Hall Ticket to the examination center.\n\nBest of luck,\nController of Examinations\nJECRC University, Jaipur",
+        body: "Dear {{name}},\n\nThis is an official communication regarding your upcoming End Semester Examinations at JECRC University.\n\nCandidate Profile:\nâ€¢ Name: {{name}}\nâ€¢ Roll Number: {{rollNumber}}\nâ€¢ Registered Email: {{email}}\n\nPlease ensure you carry your official University Identity Card and Hall Ticket to the examination center.\n\nBest of luck,\nController of Examinations\nJECRC University, Jaipur",
       });
     } else if (type === "fees") {
       setEmailTemplate({
         subject: "JECRC University - Academic Fee Receipt & Clearance Notice",
-        body: "Dear {{name}},\n\nWe hereby confirm the receipt of your academic fee submission for student ID: {{id}}.\n\nRegistration Details:\n• Name: {{name}}\n• Roll Number: {{rollNumber}}\n• Status: Fee Cleared\n\nThank you for your prompt clearance.\n\nFinance & Accounts Department\nJECRC University, Jaipur",
+        body: "Dear {{name}},\n\nWe hereby confirm the receipt of your academic fee submission for student ID: {{id}}.\n\nRegistration Details:\nâ€¢ Name: {{name}}\nâ€¢ Roll Number: {{rollNumber}}\nâ€¢ Status: Fee Cleared\n\nThank you for your prompt clearance.\n\nFinance & Accounts Department\nJECRC University, Jaipur",
       });
     }
     toast.success("Loaded JECRC Official Template!");
@@ -1507,86 +1569,198 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Notice Composer */}
+            {/* Notice Composer - Template & Free-form */}
             <div className="space-y-4 pt-3 border-t border-slate-800">
-              
-              <div className="flex items-center gap-6">
+
+              {/* Mode Toggle */}
+              <div className="flex items-center justify-between">
                 <div className="inline-flex items-center text-xs font-bold text-slate-300">
                   <Smartphone className="w-4 h-4 text-emerald-500 mr-1.5" />
-                  WhatsApp Direct Utility Broadcast (Meta Cloud API)
+                  WhatsApp Broadcast (Meta Cloud API)
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-bold ${!useTemplate ? "text-emerald-400" : "text-slate-500"}`}>Free Text</span>
+                  <button
+                    type="button"
+                    onClick={() => setUseTemplate(v => !v)}
+                    className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${useTemplate ? "bg-emerald-600" : "bg-slate-700"}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${useTemplate ? "translate-x-5" : "translate-x-0"}`} />
+                  </button>
+                  <span className={`text-[10px] font-bold ${useTemplate ? "text-emerald-400" : "text-slate-500"}`}>Use Template</span>
                 </div>
               </div>
 
-              {/* Message Body */}
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-xs font-bold text-slate-300">Message Body (WhatsApp Text)</label>
-                  <span className="text-[9px] text-slate-500 font-mono">{broadcastMessage.length} chars</span>
-                </div>
-                <textarea
-                  rows={6}
-                  value={broadcastMessage}
-                  onChange={(e) => setBroadcastMessage(e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-xl outline-none text-xs transition-all leading-relaxed font-mono ${
-                    isDark ? "dark-input" : "light-input"
-                  }`}
-                  placeholder="Hello {{name}}, welcome back..."
-                />
-                
-                {/* Tag Chips */}
-                <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                  <span className="text-[9px] uppercase font-bold text-slate-500">Insert tag:</span>
-                  {["name", "phone", "email"].map((tag) => (
+              {useTemplate ? (
+                /* ---- TEMPLATE MODE ---- */
+                <div className="space-y-4">
+                  {/* Load Templates Button + Search */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={templateSearch}
+                        onChange={e => setTemplateSearch(e.target.value)}
+                        placeholder="Search template name..."
+                        className="pl-8 pr-3 py-2 rounded-xl text-xs outline-none w-full dark-input font-normal"
+                      />
+                    </div>
                     <button
-                      key={tag}
                       type="button"
-                      onClick={() => setBroadcastMessage(prev => prev + ` {{${tag}}}`)}
-                      className="px-2 py-0.5 border border-slate-800 text-[10px] font-mono rounded bg-slate-900 text-emerald-400 hover:text-emerald-350 transition-colors cursor-pointer"
+                      onClick={fetchMetaTemplates}
+                      disabled={isLoadingTemplates}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all cursor-pointer disabled:opacity-50"
                     >
-                      +&#123;&#123;{tag}&#125;&#125;
+                      {isLoadingTemplates ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      Load Templates
                     </button>
-                  ))}
+                  </div>
+
+                  {/* Template List */}
+                  {metaTemplates.length > 0 && (
+                    <div className="border border-slate-800 rounded-xl overflow-hidden max-h-52 overflow-y-auto">
+                      {metaTemplates
+                        .filter(t => t.name.toLowerCase().includes(templateSearch.toLowerCase()))
+                        .map(t => (
+                          <button
+                            key={t.name}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTemplate(t);
+                              setTemplateVarValues(Array(t.variableCount).fill(""));
+                            }}
+                            className={`w-full text-left px-4 py-3 text-xs flex items-start justify-between gap-4 transition-all cursor-pointer border-b border-slate-800 last:border-b-0 ${
+                              selectedTemplate?.name === t.name
+                                ? "bg-emerald-600/20 text-emerald-300"
+                                : "hover:bg-slate-800/60 text-slate-300"
+                            }`}
+                          >
+                            <div>
+                              <div className="font-bold text-[11px]">{t.name}</div>
+                              <div className="text-slate-500 text-[10px] mt-0.5 truncate max-w-xs">{t.body}</div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">{t.language}</span>
+                              {t.variableCount > 0 && (
+                                <span className="text-[9px] bg-blue-900/40 text-blue-400 px-2 py-0.5 rounded-full">{t.variableCount} var{t.variableCount > 1 ? "s" : ""}</span>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+
+                  {metaTemplates.length === 0 && !isLoadingTemplates && (
+                    <div className="text-center py-6 text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl">
+                      Click "Load Templates" to fetch your approved Meta templates
+                    </div>
+                  )}
+
+                  {/* Selected Template + Variable Inputs */}
+                  {selectedTemplate && (
+                    <div className={`p-4 rounded-xl border space-y-3 ${isDark ? "bg-slate-900/60 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Selected Template</div>
+                          <div className="text-sm font-bold text-emerald-400 mt-0.5">{selectedTemplate.name}</div>
+                          <div className="text-[10px] text-slate-500 mt-1 font-mono">{selectedTemplate.body}</div>
+                        </div>
+                        <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
+                      </div>
+
+                      {/* Variable Inputs */}
+                      {selectedTemplate.variableCount > 0 && (
+                        <div className="space-y-2 pt-2 border-t border-slate-800">
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fill in Template Variables</div>
+                          <div className="text-[10px] text-slate-500">Use <code className="bg-slate-800 px-1 rounded">{"{{name}}"}</code> to auto-fill recipient name, or type any fixed text.</div>
+                          {Array.from({ length: selectedTemplate.variableCount }).map((_, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono text-blue-400 w-8 shrink-0">{`{{${i + 1}}}`}</span>
+                              <input
+                                type="text"
+                                value={templateVarValues[i] || ""}
+                                onChange={e => {
+                                  const updated = [...templateVarValues];
+                                  updated[i] = e.target.value;
+                                  setTemplateVarValues(updated);
+                                }}
+                                placeholder={i === 0 ? "{{name}} or fixed text" : "Enter value for variable " + (i + 1)}
+                                className="flex-1 px-3 py-1.5 rounded-lg text-xs outline-none dark-input font-mono"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Live Progress Bar (shown while broadcasting) */}
+                  {isBroadcasting && broadcastJobStats && (
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
+                      <div className="flex justify-between text-[10px] font-bold">
+                        <span className="text-slate-300">Broadcasting in background...</span>
+                        <span className="text-emerald-400">{broadcastJobStats.sent} / {broadcastJobStats.total} sent</span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5">
+                        <div
+                          className="h-1.5 rounded-full bg-emerald-500 transition-all"
+                          style={{ width: `${broadcastJobStats.total > 0 ? Math.round((broadcastJobStats.sent / broadcastJobStats.total) * 100) : 0}%` }}
+                        />
+                      </div>
+                      <div className="flex gap-4 text-[10px]">
+                        <span className="text-emerald-400">&#10003; {broadcastJobStats.sent} sent</span>
+                        <span className="text-red-400">&#10007; {broadcastJobStats.failed} failed</span>
+                        <span className="text-slate-400">&#8987; {broadcastJobStats.pending} pending</span>
+                      </div>
+                      <div className="text-[9px] text-slate-500 italic">You can safely close this browser. The broadcast will continue on the server.</div>
+                    </div>
+                  )}
                 </div>
-              </div>
-
-              {/* Preview - WhatsApp Chat Bubble Preview ONLY */}
-              <div className="pt-4 border-t border-slate-800 flex justify-center">
-                <div className="w-full max-w-md space-y-1.5">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase text-center">WhatsApp Chat Bubble Preview</div>
-                  <div className="bg-[#0b141a] border border-slate-850 rounded-2xl p-4 flex flex-col justify-between min-h-[140px] relative overflow-hidden bg-cover bg-center" style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')" }}>
-                    <div className="absolute inset-0 bg-[#0b141a]/95 pointer-events-none"></div>
-                    
-                    <div className="relative z-10 bg-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-none px-3.5 py-2 text-xs max-w-[85%] self-end shadow-md font-sans">
-                      <p className="whitespace-pre-wrap">
-                        {(() => {
-                          let sampleName = "Recipient Name";
-                          let samplePhone = "91******210";
-                          let sampleEmail = "r***t@jecrc.edu.in";
-
-                          if (selectedRoleGroup === "Custom") {
-                            sampleName = customContact.name || "Recipient Name";
-                            samplePhone = customContact.phone || "919876543210";
-                            sampleEmail = customContact.email || "recipient@jecrc.edu.in";
-                          } else if (dbContacts.length > 0) {
-                            const first = dbContacts[0];
-                            sampleName = first.name || "Recipient Name";
-                            samplePhone = maskPhoneNumber(first.phone);
-                            sampleEmail = maskEmailAddress(first.email);
-                          }
-
-                          return broadcastMessage
-                            .replace(/{{name}}/gi, sampleName)
-                            .replace(/{{phone}}/gi, samplePhone)
-                            .replace(/{{email}}/gi, sampleEmail);
-                        })()}
-                      </p>
-                      <div className="text-[9px] text-[#8696a0] text-right mt-1 font-sans font-medium">
-                        {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ✓✓
+              ) : (
+                /* ---- FREE TEXT MODE ---- */
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-bold text-slate-300">Message Body (WhatsApp Text)</label>
+                      <span className="text-[9px] text-slate-500 font-mono">{broadcastMessage.length} chars</span>
+                    </div>
+                    <textarea
+                      rows={6}
+                      value={broadcastMessage}
+                      onChange={e => setBroadcastMessage(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-xl outline-none text-xs transition-all leading-relaxed font-mono ${isDark ? "dark-input" : "light-input"}`}
+                      placeholder="Hello {{name}}, welcome back..."
+                    />
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                      <span className="text-[9px] uppercase font-bold text-slate-500">Insert tag:</span>
+                      {["name", "phone", "email"].map(tag => (
+                        <button key={tag} type="button" onClick={() => setBroadcastMessage(prev => prev + ` {{${tag}}}`)}
+                          className="px-2 py-0.5 border border-slate-800 text-[10px] font-mono rounded bg-slate-900 text-emerald-400 hover:text-emerald-350 transition-colors cursor-pointer">
+                          +&#123;&#123;{tag}&#125;&#125;
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pt-3 border-t border-slate-800 flex justify-center">
+                    <div className="w-full max-w-md space-y-1.5">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase text-center">WhatsApp Chat Preview</div>
+                      <div className="bg-[#0b141a] border border-slate-850 rounded-2xl p-4 flex flex-col justify-between min-h-[100px] relative overflow-hidden">
+                        <div className="absolute inset-0 bg-[#0b141a]/95 pointer-events-none"></div>
+                        <div className="relative z-10 bg-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-none px-3.5 py-2 text-xs max-w-[85%] self-end shadow-md font-sans">
+                          <p className="whitespace-pre-wrap">
+                            {(() => {
+                              let sampleName = dbContacts.length > 0 ? dbContacts[0].name : "Recipient Name";
+                              return broadcastMessage.replace(/{{name}}/gi, sampleName).replace(/{{phone}}/gi, "91****210").replace(/{{email}}/gi, "r***@jecrc.edu.in");
+                            })()}
+                          </p>
+                          <div className="text-[9px] text-[#8696a0] text-right mt-1">{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} &#10003;&#10003;</div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Submit Dispatch Action */}
               <div className="pt-2 flex justify-end">
@@ -1596,7 +1770,7 @@ export default function Dashboard() {
                   className={`flex items-center space-x-2 px-6 py-3 rounded-xl text-xs font-bold text-white transition-all shadow-md ${
                     isBroadcasting
                       ? "bg-slate-700 text-slate-500 cursor-not-allowed border border-slate-800"
-                      : "bg-emerald-600 hover:bg-emerald-750 shadow-emerald-500/10 cursor-pointer active:scale-95"
+                      : "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/10 cursor-pointer active:scale-95"
                   }`}
                 >
                   {isBroadcasting ? (
@@ -1607,13 +1781,14 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <Send className="w-3.5 h-3.5" />
-                      <span>Send WhatsApp Broadcast</span>
+                      <span>{useTemplate ? "Queue Broadcast via Template" : "Send WhatsApp Broadcast"}</span>
                     </>
                   )}
                 </button>
               </div>
 
-            </div></div>
+            </div>
+        </div>
         </div>
       )}
       </div>
