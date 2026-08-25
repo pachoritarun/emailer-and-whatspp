@@ -73,7 +73,26 @@ export async function getDbPool(): Promise<mysql.Pool> {
       )
     `);
 
-    console.log("Database tables verified successfully.");
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS local_templates (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        language VARCHAR(20) NOT NULL DEFAULT 'en_US',
+        body TEXT,
+        variable_count INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Seed defaults
+    await pool.query(`
+      INSERT IGNORE INTO local_templates (name, language, body, variable_count)
+      VALUES 
+      ('student_notice', 'en_US', 'Dear {{1}}, this is JECRC Administration. Please note that: {{2}}.', 2),
+      ('exam_alert', 'en_US', 'Dear {{1}}, your exam hall ticket for {{2}} is ready.', 2)
+    `);
+
+    console.log("Database tables verified and seeded successfully.");
   } catch (error) {
     console.error("Database table initialization failed:", error);
   }

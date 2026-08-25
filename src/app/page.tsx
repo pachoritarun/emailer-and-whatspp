@@ -109,6 +109,11 @@ export default function Dashboard() {
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [activeBroadcastId, setActiveBroadcastId] = useState<string|null>(null);
   const [broadcastJobStats, setBroadcastJobStats] = useState<{total:number;sent:number;failed:number;pending:number}|null>(null);
+  // Local Template Form States
+  const [showAddTemplateForm, setShowAddTemplateForm] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateLang, setNewTemplateLang] = useState("en_US");
+  const [newTemplateBody, setNewTemplateBody] = useState("");
 
   // Fetch contacts based on role
   const fetchContacts = async (role: string) => {
@@ -228,6 +233,59 @@ export default function Dashboard() {
   };
 
   // Trigger simultaneous broadcast
+  const handleSaveLocalTemplate = async () => {
+    if (!newTemplateName) {
+      toast.error("Template name is required.");
+      return;
+    }
+    const varMatches = newTemplateBody.match(/\\{\\{\\d+\\}\\}/g) || [];
+    const variableCount = varMatches.length;
+    try {
+      const res = await fetch("/api/whatsapp/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newTemplateName.trim(),
+          language: newTemplateLang || "en_US",
+          body: newTemplateBody,
+          variableCount
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Template saved locally!");
+        setShowAddTemplateForm(false);
+        setNewTemplateName("");
+        setNewTemplateBody("");
+        fetchMetaTemplates();
+      } else {
+        toast.error("Failed to save: " + data.error);
+      }
+    } catch (err: any) {
+      toast.error("Error saving template: " + err.message);
+    }
+  };
+
+  const handleDeleteLocalTemplate = async (name: string) => {
+    try {
+      const res = await fetch(`/api/whatsapp/templates?name=${encodeURIComponent(name)}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Template deleted!");
+        if (selectedTemplate?.name === name) {
+          setSelectedTemplate(null);
+        }
+        fetchMetaTemplates();
+      } else {
+        toast.error("Failed to delete: " + data.error);
+      }
+    } catch (err: any) {
+      toast.error("Error deleting template: " + err.message);
+    }
+  };
+
   const fetchMetaTemplates = async () => {
     setIsLoadingTemplates(true);
     try {
@@ -1613,9 +1671,75 @@ export default function Dashboard() {
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all cursor-pointer disabled:opacity-50"
                     >
                       {isLoadingTemplates ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                      Load Templates
+                      Sync/Load
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddTemplateForm(v => !v)}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Template
                     </button>
                   </div>
+
+                  {/* Create Local Template Form */}
+                  {showAddTemplateForm && (
+                    <div className={`p-4 rounded-xl border space-y-3 ${isDark ? "bg-slate-900/60 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
+                      <div className="text-xs font-bold text-emerald-400">Create Local Template</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold mb-1">TEMPLATE NAME (Must match Meta name)</label>
+                          <input
+                            type="text"
+                            value={newTemplateName}
+                            onChange={e => setNewTemplateName(e.target.value)}
+                            placeholder="e.g. fee_receipt_alert"
+                            className="w-full px-3 py-2 rounded-xl text-xs outline-none dark-input"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold mb-1">LANGUAGE</label>
+                          <input
+                            type="text"
+                            value={newTemplateLang}
+                            onChange={e => setNewTemplateLang(e.target.value)}
+                            placeholder="e.g. en_US"
+                            className="w-full px-3 py-2 rounded-xl text-xs outline-none dark-input"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 font-bold mb-1">BODY CONTENT (Use {"{{1}}"}, {"{{2}}"} for variables)</label>
+                        <textarea
+                          rows={3}
+                          value={newTemplateBody}
+                          onChange={e => setNewTemplateBody(e.target.value)}
+                          placeholder="e.g. Dear {{1}}, your fee receipt is generated. ID: {{2}}"
+                          className="w-full px-3 py-2 rounded-xl text-xs outline-none dark-input leading-relaxed font-mono"
+                        />
+                        <div className="text-[9px] text-slate-500 mt-1">
+                          Use <code className="bg-slate-850 px-1 py-0.5 rounded text-blue-400">{"{{1}}"}</code>, <code className="bg-slate-850 px-1 py-0.5 rounded text-blue-400">{"{{2}}"}</code> etc. variables will auto-generate input fields.
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddTemplateForm(false)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveLocalTemplate}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+                        >
+                          Save Template
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Template List */}
                   {metaTemplates.length > 0 && (
@@ -1641,10 +1765,24 @@ export default function Dashboard() {
                               <div className="text-slate-500 text-[10px] mt-0.5 truncate max-w-xs">{t.body}</div>
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
-                              <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">{t.language}</span>
-                              {t.variableCount > 0 && (
-                                <span className="text-[9px] bg-blue-900/40 text-blue-400 px-2 py-0.5 rounded-full">{t.variableCount} var{t.variableCount > 1 ? "s" : ""}</span>
-                              )}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">{t.language}</span>
+                                {t.variableCount > 0 && (
+                                  <span className="text-[9px] bg-blue-900/40 text-blue-400 px-2 py-0.5 rounded-full">{t.variableCount} var{t.variableCount > 1 ? "s" : ""}</span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`Delete local template "${t.name}"?`)) {
+                                    handleDeleteLocalTemplate(t.name);
+                                  }
+                                }}
+                                className="text-[8px] text-red-400 hover:text-red-300 hover:bg-red-950/20 px-1.5 py-0.5 rounded transition-all border border-transparent hover:border-red-900/40 cursor-pointer mt-1"
+                              >
+                                Delete
+                              </button>
                             </div>
                           </button>
                         ))}
@@ -1653,7 +1791,7 @@ export default function Dashboard() {
 
                   {metaTemplates.length === 0 && !isLoadingTemplates && (
                     <div className="text-center py-6 text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl">
-                      Click "Load Templates" to fetch your approved Meta templates
+                      Click "Sync/Load" or "Add Template" to manage your templates
                     </div>
                   )}
 
