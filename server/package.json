@@ -1,0 +1,31 @@
+{
+  "name": "university-portal-server",
+  "version": "1.0.0",
+  "description": "University Enterprise Communication Portal - Core API, MySQL Queue Worker & Forensic Observability",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "worker": "node dist/queue/worker.js",
+    "reconciliation": "node dist/services/reconciliation-cli.js",
+    "dev": "tsx watch src/index.ts",
+    "db:setup": "node scripts/setup-db.mjs",
+    "test": "node -e \"if(require('fs').existsSync('data/store.json')) require('fs').unlinkSync('data/store.json')\" && node --test dist/tests/*.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mysql2": "^3.12.0",
+    "nodemailer": "^10.0.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.4",
+    "@types/nodemailer": "^8.0.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

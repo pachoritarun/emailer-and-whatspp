@@ -1,35 +1,13 @@
 {
-  "name": "emailer",
-  "version": "0.1.0",
+  "name": "university-enterprise-communication-portal",
+  "version": "1.4.0",
   "private": true,
+  "description": "University Enterprise Communication Portal & Forensic Observability System",
   "scripts": {
-    "dev": "next dev --webpack",
-    "build": "next build --webpack",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "lucide-react": "^1.29.0",
-    "mysql2": "^3.23.4",
-    "next": "16.3.0",
-    "nodemailer": "^9.0.4",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "react-hot-toast": "^2.6.0",
-    "react-simple-wysiwyg": "^3.4.1",
-    "uuid": "^14.0.2",
-    "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/nodemailer": "^8.0.1",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.0",
-    "lightningcss-win32-x64-msvc": "^1.33.0",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "test": "cd server && npm test",
+    "build": "cd server && npm run build && cd ../client && npm run build",
+    "start:server": "cd server && npm start",
+    "start:worker": "cd server && npm run worker",
+    "start:client": "cd client && npm run dev"
   }
 }

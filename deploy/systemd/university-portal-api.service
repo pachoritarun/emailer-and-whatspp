@@ -1,0 +1,31 @@
+[Unit]
+Description=University Enterprise Communication Portal - Core REST API & Webhook Ingest
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=uniportal
+Group=uniportal
+WorkingDirectory=/opt/university-portal/server
+EnvironmentFile=/etc/university-portal/server.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=uniportal-api
+
+# Hardening
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/log/university-portal /var/lib/university-portal/uploads
+
+# Resource Limits
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

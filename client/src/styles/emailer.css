@@ -1,0 +1,408 @@
+/* =====================================================================
+   EMAILER STYLES — JECRC UNIVERSITY OFFICIAL DISPATCHER
+   Institutional Red + Black + Crisp Neutral Design System
+   ===================================================================== */
+
+.emailer-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+/* Institutional Header Card */
+.emailer-header-card {
+  background: var(--uni-white);
+  border: 1px solid var(--uni-border-gray);
+  border-radius: var(--radius-subtle);
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.emailer-brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.emailer-logo-badge {
+  background: #FFFFFF;
+  border: 1px solid var(--uni-border-gray);
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.emailer-logo-img {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+}
+
+.emailer-title-block h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--uni-black);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.emailer-official-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+  padding: 2px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.04em;
+}
+
+.emailer-subtitle {
+  font-size: 0.8rem;
+  color: var(--uni-muted);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.emailer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Stepper Workflow Bar */
+.emailer-stepper-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .emailer-stepper-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.emailer-step-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-subtle);
+  border: 1px solid var(--uni-border-gray);
+  background: var(--uni-white);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.emailer-step-card.active {
+  border-color: var(--uni-red);
+  background: #FFF5F5;
+  box-shadow: 0 0 0 1px var(--uni-red);
+}
+
+.emailer-step-card.completed {
+  border-color: #A7F3D0;
+  background: #F0FDF4;
+}
+
+.emailer-step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: #E5E5E5;
+  color: #555555;
+}
+
+.emailer-step-card.active .emailer-step-num {
+  background: var(--uni-red);
+  color: #FFFFFF;
+}
+
+.emailer-step-card.completed .emailer-step-num {
+  background: #16A34A;
+  color: #FFFFFF;
+}
+
+.emailer-step-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--uni-black);
+}
+
+.emailer-step-desc {
+  font-size: 0.72rem;
+  color: var(--uni-muted);
+}
+
+/* Live Dispatch Monitor Card */
+.emailer-monitor-card {
+  background: var(--uni-white);
+  border: 1px solid var(--uni-border-gray);
+  border-radius: var(--radius-subtle);
+  padding: 18px 22px;
+  box-shadow: var(--shadow-card);
+}
+
+.emailer-metric-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 768px) {
+  .emailer-metric-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.emailer-metric-box {
+  padding: 12px 16px;
+  border: 1px solid var(--uni-border-gray);
+  border-radius: var(--radius-subtle);
+  background: #FAFAFA;
+}
+
+.emailer-metric-box .metric-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--uni-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.emailer-metric-box .metric-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--uni-black);
+  margin-top: 4px;
+}
+
+.emailer-metric-box.success .metric-value {
+  color: #16A34A;
+}
+
+.emailer-metric-box.failed .metric-value {
+  color: #DC2626;
+}
+
+.emailer-metric-box.queue .metric-value {
+  color: #D97706;
+}
+
+/* Main 2-Column Working Layout */
+.emailer-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 1100px) {
+  .emailer-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Upload Dropzone */
+.emailer-dropzone {
+  border: 2px dashed #CBD5E1;
+  border-radius: var(--radius-subtle);
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  background: #F8FAFC;
+  transition: all 0.2s ease;
+}
+
+.emailer-dropzone:hover {
+  border-color: var(--uni-red);
+  background: #FFF5F5;
+}
+
+.emailer-dropzone-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--uni-red);
+  margin-bottom: 12px;
+}
+
+/* Preset Buttons */
+.emailer-preset-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.emailer-preset-btn {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border: 1px solid var(--uni-border-gray);
+  border-radius: 4px;
+  background: var(--uni-white);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: #333333;
+}
+
+.emailer-preset-btn:hover {
+  border-color: var(--uni-black);
+  background: #F5F5F5;
+}
+
+.emailer-preset-btn.active {
+  border-color: var(--uni-black);
+  background: var(--uni-black);
+  color: #FFFFFF;
+}
+
+/* Variable Tag Pills */
+.emailer-tag-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+.emailer-tag-pill {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  color: #1E293B;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.emailer-tag-pill:hover {
+  background: #E2E8F0;
+  border-color: #CBD5E1;
+  color: var(--uni-black);
+}
+
+/* Live Email Preview Box */
+.emailer-preview-envelope {
+  background: #FFFFFF;
+  border: 1px solid var(--uni-border-gray);
+  border-radius: var(--radius-subtle);
+  overflow: hidden;
+  box-shadow: var(--shadow-subtle);
+}
+
+.emailer-preview-header {
+  background: #F8FAFC;
+  padding: 12px 16px;
+  border-bottom: 1px solid #E2E8F0;
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.emailer-preview-body {
+  padding: 18px 20px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: #1E293B;
+  background: #FFFFFF;
+  min-height: 180px;
+}
+
+/* Modal Overlay */
+.emailer-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.emailer-modal-content {
+  background: #FFFFFF;
+  border-radius: var(--radius-subtle);
+  border: 1px solid var(--uni-border-gray);
+  width: 100%;
+  max-width: 650px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+}
+
+.emailer-modal-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--uni-border-gray);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.emailer-modal-body {
+  padding: 24px;
+  font-size: 0.85rem;
+  color: #333333;
+}
+
+.emailer-modal-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--uni-border-gray);
+  background: #FAFAFA;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.emailer-body-textarea {
+  width: 100% !important;
+  box-sizing: border-box !important;
+  min-height: 280px !important;
+  resize: vertical;
+  line-height: 1.6;
+  font-family: var(--font-sans);
+  padding: 12px 14px;
+}

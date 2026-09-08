@@ -1,0 +1,33 @@
+[Unit]
+Description=University Enterprise Communication Portal - MySQL Queue Worker Instance %i
+After=network.target mysql.service university-portal-api.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=uniportal
+Group=uniportal
+WorkingDirectory=/opt/university-portal/server
+EnvironmentFile=/etc/university-portal/server.env
+Environment=WORKER_INSTANCE_ID=WORKER-%i
+ExecStart=/usr/bin/node dist/queue/worker.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=uniportal-worker-%i
+
+# Process Hardening
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/log/university-portal
+
+# Concurrency & limits
+LimitNOFILE=65536
+TimeoutStopSec=45
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

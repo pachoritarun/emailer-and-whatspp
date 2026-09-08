@@ -1,0 +1,22 @@
+[Unit]
+Description=University Enterprise Communication Portal - Forensic Reconciliation & Stuck Job Detector
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=oneshot
+User=uniportal
+Group=uniportal
+WorkingDirectory=/opt/university-portal/server
+EnvironmentFile=/etc/university-portal/server.env
+ExecStart=/usr/bin/node dist/services/reconciliation-cli.js
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=uniportal-reconciliation
+
+# Hardening
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/log/university-portal

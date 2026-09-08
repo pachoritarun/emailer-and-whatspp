@@ -1,0 +1,11 @@
+[Unit]
+Description=Timer for University Enterprise Communication Portal Forensic Reconciliation
+After=network.target
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=university-portal-reconciliation.service
+
+[Install]
+WantedBy=timers.target
