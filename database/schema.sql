@@ -4,8 +4,8 @@
 -- Optimized for 100,000 to 500,000+ Contacts & High-Volume Messaging
 -- =====================================================================
 -- Ensure database exists and is selected
-CREATE DATABASE IF NOT EXISTS university_portal CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE university_portal;
+CREATE DATABASE IF NOT EXISTS Communication_DB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE Communication_DB;
 
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS message_events;

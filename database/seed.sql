@@ -3,8 +3,8 @@
 -- INITIAL SEED DATA FOR PRODUCTION / STAGING
 -- =====================================================================
 -- Ensure database exists and is selected
-CREATE DATABASE IF NOT EXISTS university_portal CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE university_portal;
+CREATE DATABASE IF NOT EXISTS Communication_DB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE Communication_DB;
 
 -- Roles
 INSERT INTO roles (id, role_name, description) VALUES
