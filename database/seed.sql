@@ -14,16 +14,17 @@ INSERT INTO roles (id, role_name, description) VALUES
 ('ROLE-AUDITOR', 'Forensic Auditor', 'Read-only access to audit logs, diagnostic traces, and compliance reports')
 ON DUPLICATE KEY UPDATE role_name=VALUES(role_name);
 
--- Users (Password hashes are salted argon2/bcrypt in production)
-INSERT INTO users (id, username, email, password_hash, full_name, is_active) VALUES
-('USR-001', 'admin.provost', 'provost.office@university.edu', '$2b$12$eK8kXf2M9uN4Jk6/SampleHashForAdmin123', 'Office of the Provost', 1),
-('USR-002', 'comm.officer', 'registrar.broadcast@university.edu', '$2b$12$eK8kXf2M9uN4Jk6/SampleHashForOfficer456', 'University Registrar Communications', 1)
+-- Users (Initial Encrypted Developer & Sender Accounts)
+INSERT INTO users (id, username, email, password_hash, salt, role, full_name, must_change_credentials, is_active) VALUES
+('USR-DEV-001', 'Developer', 'developer@jecrcu.edu.in', 'de3854b62ad37e827d3cdc8063bd2c9efacfd8350b28c66a05d7dc4f257e800846fd0b2b5ddddad4599b9d3267ca8485d3cffaa3a1a35506c9039dfb81166f5a', 'c1bfe8aac6b374bbc27d537c50cbf9f41529adcff4f667ebbd336a56b1ed1a6b', 'DEVELOPER', 'System Developer & Forensics Admin', 1, 1),
+('USR-SENDER-001', 'Sender', 'sender@jecrcu.edu.in', '943605fabc0d6ae5f3bff120563d1a94f8d9786272e364538310547035b892358f0cd6d41fb476a53b4f016a5209d951761e13c77e01dbf3c4726118809b31f7', '31a1d4375fe4a6b87d073dd69b88b5dc4a4da02bacca2e38cb617eb1dae2bf90', 'SENDER', 'Official Notice & Broadcast Sender', 1, 1)
 ON DUPLICATE KEY UPDATE full_name=VALUES(full_name);
 
 INSERT INTO user_roles (user_id, role_id) VALUES
-('USR-001', 'ROLE-SUPERADMIN'),
-('USR-002', 'ROLE-COMM-ADMIN')
+('USR-DEV-001', 'ROLE-SUPERADMIN'),
+('USR-SENDER-001', 'ROLE-COMM-ADMIN')
 ON DUPLICATE KEY UPDATE role_id=VALUES(role_id);
+
 
 -- Departments
 INSERT INTO departments (id, code, name) VALUES
