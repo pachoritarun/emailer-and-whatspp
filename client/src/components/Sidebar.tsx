@@ -6,7 +6,8 @@ import {
   GraduationCap,
   Mail,
   CheckCircle2,
-  Terminal
+  Terminal,
+  LayoutTemplate
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -19,6 +20,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onOpenSendModal, userRole }) => {
   const whatsappNav = [
     { id: 'dashboard', label: 'WhatsApp Dashboard', icon: LayoutDashboard },
+    { id: 'templates', label: 'WhatsApp Templates', icon: LayoutTemplate },
     { id: 'history', label: 'Notice History & Receipts', icon: History },
   ];
 

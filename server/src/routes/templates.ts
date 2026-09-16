@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { executeQuery, getMemoryStore } from '../db/pool.js';
 import { logger } from '../services/logger.js';
+import { WhatsAppTemplateService } from '../services/whatsapp-templates.js';
 
 export const templatesRouter = Router();
 
@@ -164,3 +165,43 @@ templatesRouter.post('/', async (req, res) => {
     res.status(500).json({ success: false, error: err.message || 'Database error saving template' });
   }
 });
+
+// POST /api/templates/create-and-submit - Studio endpoint submitting directly to Meta Cloud API
+templatesRouter.post('/create-and-submit', async (req, res) => {
+  try {
+    const userRole = (req.body.userRole || 'STAFF') as string;
+    const userId = (req.body.userId || 'USR-001') as string;
+
+    const result = await WhatsAppTemplateService.createAndSubmit(req.body, userRole, userId);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.status(201).json(result);
+  } catch (err: any) {
+    logger.error('TEMPLATE_STUDIO_ERROR', 'Unexpected error in template studio submission: ' + err.message);
+    return res.status(500).json({ success: false, error: err.message || 'Internal error creating template' });
+  }
+});
+
+// POST /api/templates/sync - 1-Click sync templates and statuses from Meta Cloud API
+templatesRouter.post('/sync', async (req, res) => {
+  try {
+    const result = await WhatsAppTemplateService.syncFromMeta();
+    return res.json(result);
+  } catch (err: any) {
+    logger.error('TEMPLATE_SYNC_ERROR', 'Error syncing from Meta: ' + err.message);
+    return res.status(500).json({ success: false, error: err.message || 'Failed to sync templates from Meta' });
+  }
+});
+
+// DELETE /api/templates/:name - Delete template from Meta and MySQL
+templatesRouter.delete('/:name', async (req, res) => {
+  try {
+    const result = await WhatsAppTemplateService.deleteTemplate(req.params.name);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Failed to delete template' });
+  }
+});
+

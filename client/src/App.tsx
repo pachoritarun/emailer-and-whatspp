@@ -6,6 +6,7 @@ import { NoticeHistoryView } from './views/NoticeHistoryView.js';
 import { ContactsView } from './views/ContactsView.js';
 import { DeveloperConsoleView } from './views/DeveloperConsoleView.js';
 import { EmailerView } from './views/EmailerView.js';
+import { TemplatesView } from './views/TemplatesView.js';
 import { SendNoticeModal } from './components/SendNoticeModal.js';
 import { LoginView } from './views/LoginView.js';
 import { FirstTimeSetupModal } from './components/FirstTimeSetupModal.js';
@@ -60,6 +61,7 @@ export const App: React.FC = () => {
   const getPageTitle = () => {
     switch (activeTab) {
       case 'dashboard': return 'Official Communication Dashboard';
+      case 'templates': return 'WhatsApp Creative Template Studio';
       case 'history': return 'Notice History & Delivery Receipts';
       case 'emailer': return 'Official Bulk Email Broadcast Dispatcher';
       case 'contacts': return 'University Recipient Directory';
@@ -102,6 +104,10 @@ export const App: React.FC = () => {
                 }
               }}
             />
+          )}
+
+          {activeTab === 'templates' && (
+            <TemplatesView />
           )}
 
           {activeTab === 'history' && (

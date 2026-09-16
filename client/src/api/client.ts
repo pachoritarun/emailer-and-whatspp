@@ -198,5 +198,60 @@ export const api = {
       }
     });
     return res.json();
+  },
+
+  // WhatsApp In-Portal Template Studio
+  async createAndSubmitTemplate(data: {
+    name: string;
+    category: 'UTILITY' | 'MARKETING';
+    language: string;
+    header_type?: string;
+    header_text?: string;
+    header_sample?: string;
+    body_text: string;
+    sample_variables?: string[];
+    footer_text?: string;
+    buttons?: Array<{
+      type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
+      text: string;
+      url?: string;
+      url_example?: string;
+      phone_number?: string;
+    }>;
+  }): Promise<{ success: boolean; message?: string; template?: any; error?: string }> {
+    const token = localStorage.getItem('jecrc_auth_token');
+    const res = await fetch(`${API_BASE}/templates/create-and-submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
+  async syncMetaTemplates(): Promise<{ success: boolean; syncedCount: number; error?: string }> {
+    const token = localStorage.getItem('jecrc_auth_token');
+    const res = await fetch(`${API_BASE}/templates/sync`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    });
+    return res.json();
+  },
+
+  async deleteTemplate(name: string): Promise<{ success: boolean; error?: string }> {
+    const token = localStorage.getItem('jecrc_auth_token');
+    const res = await fetch(`${API_BASE}/templates/${name}`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    });
+    return res.json();
   }
 };
+
