@@ -36,7 +36,7 @@ export class WhatsAppTemplateService {
       return this.cachedWabaId;
     }
 
-    const envWabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || process.env.WHATSAPP_WABA_ID;
+    const envWabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || process.env.WHATSAPP_WABA_ID || '1321780173260474';
     if (envWabaId && envWabaId.trim()) {
       this.cachedWabaId = envWabaId.trim();
       return this.cachedWabaId;
