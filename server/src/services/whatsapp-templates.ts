@@ -356,11 +356,22 @@ export class WhatsAppTemplateService {
     syncedCount: number;
     error?: string;
   }> {
-    const wabaId = await this.resolveWabaId();
     const token = config.whatsapp.accessToken;
+    if (!token || !token.trim()) {
+      return {
+        success: false,
+        syncedCount: 0,
+        error: 'WHATSAPP_TOKEN is missing in server/.env. Please paste your Meta WhatsApp Access Token into /var/www/communication-portal/server/.env and restart PM2.'
+      };
+    }
 
-    if (!wabaId || !token) {
-      return { success: false, syncedCount: 0, error: 'WABA ID or WhatsApp Access Token is not configured' };
+    const wabaId = await this.resolveWabaId();
+    if (!wabaId) {
+      return {
+        success: false,
+        syncedCount: 0,
+        error: 'Unable to auto-detect WABA ID. Please add WHATSAPP_BUSINESS_ACCOUNT_ID to server/.env or check your token permissions.'
+      };
     }
 
     try {
