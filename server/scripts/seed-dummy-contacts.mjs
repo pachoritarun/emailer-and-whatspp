@@ -14,37 +14,41 @@ const SECRET_KEY = process.env.ENCRYPTION_KEY || 'uni_enterprise_secure_key_2026
 const KEY_BUFFER = crypto.createHash('sha256').update(SECRET_KEY).digest();
 const IV_LENGTH = 16;
 
-function cleanPhoneNumber(rawPhone) {
-  if (!rawPhone) return '';
+function cleanPhoneNumber(rawPhone, fallbackPhone) {
+  if (!rawPhone || String(rawPhone).includes('X') || String(rawPhone).includes('x')) {
+    return fallbackPhone;
+  }
   let str = String(rawPhone).trim().replace(/\D/g, '');
   if (str.length === 10) str = '91' + str;
   if (str.length === 11 && str.startsWith('0')) str = '91' + str.slice(1);
+  if (str.length < 10) return fallbackPhone;
   return str;
 }
 
 function hashPhone(phone) {
-  const cleaned = cleanPhoneNumber(phone);
-  return crypto.createHash('sha256').update(cleaned).digest('hex');
+  return crypto.createHash('sha256').update(phone).digest('hex');
 }
 
 function encryptPhone(phone) {
-  const cleaned = cleanPhoneNumber(phone);
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv('aes-256-cbc', KEY_BUFFER, iv);
-  const encrypted = Buffer.concat([cipher.update(cleaned, 'utf8'), cipher.final()]);
+  const encrypted = Buffer.concat([cipher.update(phone, 'utf8'), cipher.final()]);
   return Buffer.concat([iv, encrypted]);
 }
 
 /**
- * Replace the dummy phone numbers below with your 10 actual phone numbers!
- * Format can be: "9876543210" or "+919876543210" or "919876543210"
+ * 10 Dummy Contacts configuration
+ * If you provide real numbers via environment variables PHONE_1, PHONE_2 ... PHONE_10,
+ * they will be used. If left empty or containing placeholders (e.g. '919XXXXXXXXX'),
+ * safe unique test numbers (919800000001 - 919800000010) are automatically used!
  */
 const CONTACTS_DATA = [
   {
     id: 'STU-YUVRAJ-001',
     firstName: 'Yuvraj',
     lastName: '',
-    phone: process.env.PHONE_1 || '919800000001',
+    rawPhone: process.env.PHONE_1,
+    defaultPhone: '919800000001',
     category: 'STUDENT',
     categoryId: 'CAT-STU',
     department: 'Engineering',
@@ -55,7 +59,8 @@ const CONTACTS_DATA = [
     id: 'STU-SAKSHYY-002',
     firstName: 'Sakshyy',
     lastName: '',
-    phone: process.env.PHONE_2 || '919800000002',
+    rawPhone: process.env.PHONE_2,
+    defaultPhone: '919800000002',
     category: 'STUDENT',
     categoryId: 'CAT-STU',
     department: 'Medical',
@@ -66,7 +71,8 @@ const CONTACTS_DATA = [
     id: 'STU-SHUBHAM-003',
     firstName: 'Shubham',
     lastName: '',
-    phone: process.env.PHONE_3 || '919800000003',
+    rawPhone: process.env.PHONE_3,
+    defaultPhone: '919800000003',
     category: 'STUDENT',
     categoryId: 'CAT-STU',
     department: 'Engineering',
@@ -77,7 +83,8 @@ const CONTACTS_DATA = [
     id: 'STU-TARUN-004',
     firstName: 'Tarun',
     lastName: '',
-    phone: process.env.PHONE_4 || '919800000004',
+    rawPhone: process.env.PHONE_4,
+    defaultPhone: '919800000004',
     category: 'STUDENT',
     categoryId: 'CAT-STU',
     department: 'Engineering',
@@ -88,7 +95,8 @@ const CONTACTS_DATA = [
     id: 'FAC-VEDIKA-005',
     firstName: 'Vedika',
     lastName: '',
-    phone: process.env.PHONE_5 || '919800000005',
+    rawPhone: process.env.PHONE_5,
+    defaultPhone: '919800000005',
     category: 'FACULTY',
     categoryId: 'CAT-FAC',
     department: 'Medical',
@@ -99,7 +107,8 @@ const CONTACTS_DATA = [
     id: 'ALM-DHRUV-006',
     firstName: 'Dhruv',
     lastName: '',
-    phone: process.env.PHONE_6 || '919800000006',
+    rawPhone: process.env.PHONE_6,
+    defaultPhone: '919800000006',
     category: 'ALUMNI',
     categoryId: 'CAT-ALM',
     department: 'Engineering',
@@ -110,7 +119,8 @@ const CONTACTS_DATA = [
     id: 'ALM-EKLAVYA-007',
     firstName: 'Eklavya',
     lastName: '',
-    phone: process.env.PHONE_7 || '919800000007',
+    rawPhone: process.env.PHONE_7,
+    defaultPhone: '919800000007',
     category: 'ALUMNI',
     categoryId: 'CAT-ALM',
     department: 'Finance',
@@ -121,7 +131,8 @@ const CONTACTS_DATA = [
     id: 'FAC-RJ-008',
     firstName: 'RJ',
     lastName: '',
-    phone: process.env.PHONE_8 || '919800000008',
+    rawPhone: process.env.PHONE_8,
+    defaultPhone: '919800000008',
     category: 'FACULTY',
     categoryId: 'CAT-FAC',
     department: 'Business',
@@ -132,7 +143,8 @@ const CONTACTS_DATA = [
     id: 'FAC-DIVY-009',
     firstName: 'Divy',
     lastName: '',
-    phone: process.env.PHONE_9 || '919800000009',
+    rawPhone: process.env.PHONE_9,
+    defaultPhone: '919800000009',
     category: 'FACULTY',
     categoryId: 'CAT-FAC',
     department: 'Medical',
@@ -143,7 +155,8 @@ const CONTACTS_DATA = [
     id: 'ALM-NANU-010',
     firstName: 'Nanu',
     lastName: '',
-    phone: process.env.PHONE_10 || '919800000010',
+    rawPhone: process.env.PHONE_10,
+    defaultPhone: '919800000010',
     category: 'ALUMNI',
     categoryId: 'CAT-ALM',
     department: 'Business',
@@ -191,50 +204,64 @@ async function seed() {
   `);
 
   let insertedCount = 0;
+  const seenHashes = new Set();
 
-  for (const c of CONTACTS_DATA) {
-    const cleaned = cleanPhoneNumber(c.phone);
-    const pHash = hashPhone(cleaned);
+  for (let i = 0; i < CONTACTS_DATA.length; i++) {
+    const c = CONTACTS_DATA[i];
+    let cleaned = cleanPhoneNumber(c.rawPhone, c.defaultPhone);
+
+    let pHash = hashPhone(cleaned);
+    // If user passed identical duplicate numbers, fall back to unique test number
+    if (seenHashes.has(pHash)) {
+      cleaned = c.defaultPhone;
+      pHash = hashPhone(cleaned);
+    }
+    seenHashes.add(pHash);
+
     const pEnc = encryptPhone(cleaned);
-    const contactUuid = crypto.randomUUID();
 
-    // Insert into contacts table (tokenized & AES-256 encrypted)
-    await conn.query(`
-      INSERT INTO contacts (
-        id, external_identifier, first_name, last_name, category_id, department_id, phone_hash, phone_encrypted, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-      ON DUPLICATE KEY UPDATE
-        first_name = VALUES(first_name),
-        last_name = VALUES(last_name),
-        category_id = VALUES(category_id),
-        department_id = VALUES(department_id),
-        phone_hash = VALUES(phone_hash),
-        phone_encrypted = VALUES(phone_encrypted),
-        is_active = 1
-    `, [
-      contactUuid,
-      c.id,
-      c.firstName,
-      c.lastName,
-      c.categoryId,
-      c.departmentId,
-      pHash,
-      pEnc
-    ]);
+    // Check if contact already exists by external_identifier OR phone_hash
+    const [existing] = await conn.query(
+      `SELECT id FROM contacts WHERE external_identifier = ? OR phone_hash = ? LIMIT 1`,
+      [c.id, pHash]
+    );
 
-    // Ensure opt-in consent record
+    let contactId;
+    if (existing && existing.length > 0) {
+      contactId = existing[0].id;
+      // Update existing record
+      await conn.query(`
+        UPDATE contacts SET
+          external_identifier = ?,
+          first_name = ?,
+          last_name = ?,
+          category_id = ?,
+          department_id = ?,
+          phone_hash = ?,
+          phone_encrypted = ?,
+          is_active = 1
+        WHERE id = ?
+      `, [c.id, c.firstName, c.lastName, c.categoryId, c.departmentId, pHash, pEnc, contactId]);
+    } else {
+      contactId = crypto.randomUUID();
+      await conn.query(`
+        INSERT INTO contacts (
+          id, external_identifier, first_name, last_name, category_id, department_id, phone_hash, phone_encrypted, is_active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+      `, [contactId, c.id, c.firstName, c.lastName, c.categoryId, c.departmentId, pHash, pEnc]);
+    }
+
+    // Insert or update consent record with verified contactId
     await conn.query(`
       INSERT INTO contact_consent (
         id, contact_id, channel, status, consent_source
-      ) VALUES (?, (SELECT id FROM contacts WHERE external_identifier = ? LIMIT 1), 'WHATSAPP', 'OPTED_IN', 'PORTAL_TEST_SEED')
+      ) VALUES (?, ?, 'WHATSAPP', 'OPTED_IN', 'PORTAL_TEST_SEED')
       ON DUPLICATE KEY UPDATE status = 'OPTED_IN'
-    `, [
-      crypto.randomUUID(),
-      c.id
-    ]);
+    `, [crypto.randomUUID(), contactId]);
 
     insertedCount++;
-    console.log(` ✅ Seeded: ${c.firstName.padEnd(10)} | ${c.category.padEnd(8)} | ${c.department.padEnd(12)} | Phone: ${cleaned}`);
+    const isCustom = c.rawPhone && !c.rawPhone.includes('X') && cleanPhoneNumber(c.rawPhone, '') === cleaned;
+    console.log(` ✅ Seeded: ${c.firstName.padEnd(10)} | ${c.category.padEnd(8)} | ${c.department.padEnd(12)} | Phone: ${cleaned} ${isCustom ? '(Custom)' : '(Default Test)'}`);
   }
 
   await conn.end();
