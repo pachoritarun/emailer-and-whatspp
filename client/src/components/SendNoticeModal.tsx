@@ -120,7 +120,7 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
     if (!isCustomTemplate && currentTemplate) {
       const initial: Record<string, string> = {};
       detectedPlaceholders.forEach((tag, idx) => {
-        initial[tag] = currentTemplate.sampleVariables[idx] || (isNameField(tag) ? '[Student Name]' : '');
+        initial[tag] = isNameField(tag) ? '[Student Name]' : (currentTemplate.sampleVariables[idx] || '');
       });
       setVariables(initial);
 

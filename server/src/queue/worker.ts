@@ -116,7 +116,12 @@ export async function startWorkerLoop(): Promise<void> {
         const sortedKeys = paramKeys.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
         resolvedParameters = sortedKeys.map(k => {
           let val = String(rawVars[k] || '');
-          if (val.includes('[Auto: Recipient Full Name]') || val.includes('[Student Name]')) {
+          if (
+            val.includes('[Auto: Recipient Full Name]') ||
+            val.includes('[Student Name]') ||
+            val === 'Aarav Sharma' ||
+            (k === '1' && val.toLowerCase().includes('name'))
+          ) {
             val = recipientName;
           }
           return { type: 'text' as const, text: val };
@@ -124,7 +129,12 @@ export async function startWorkerLoop(): Promise<void> {
       } else {
         resolvedParameters = paramKeys.map(k => {
           let val = String(rawVars[k] || '');
-          if (val.includes('[Auto: Recipient Full Name]') || val.includes('[Student Name]')) {
+          if (
+            val.includes('[Auto: Recipient Full Name]') ||
+            val.includes('[Student Name]') ||
+            val === 'Aarav Sharma' ||
+            k.toLowerCase().includes('name')
+          ) {
             val = recipientName;
           }
           return { type: 'text' as const, parameter_name: k, text: val };
