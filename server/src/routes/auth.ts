@@ -84,3 +84,69 @@ authRouter.get('/sender-activity', async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, error: 'Failed to retrieve sender activity logs' });
   }
 });
+
+// GET /api/auth/users - List all portal user profiles
+authRouter.get('/users', async (req: Request, res: Response) => {
+  try {
+    const users = await AuthService.getUsers();
+    return res.json({ success: true, users });
+  } catch (err: any) {
+    logger.error('AUTH_GET_USERS_ERR', 'Error fetching users: ' + err.message);
+    return res.status(500).json({ success: false, error: 'Failed to load user profiles' });
+  }
+});
+
+// POST /api/auth/users - Create a new user profile
+authRouter.post('/users', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+    const validation = AuthService.validateToken(token);
+
+    const result = await AuthService.createUser(req.body, validation.session?.userId);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.status(201).json(result);
+  } catch (err: any) {
+    logger.error('AUTH_CREATE_USER_ERR', 'Error creating user: ' + err.message);
+    return res.status(500).json({ success: false, error: 'Failed to create user profile' });
+  }
+});
+
+// DELETE /api/auth/users/:id - Delete a user profile
+authRouter.delete('/users/:id', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+    const validation = AuthService.validateToken(token);
+
+    const result = await AuthService.deleteUser(req.params.id, validation.session?.userId);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    logger.error('AUTH_DELETE_USER_ERR', 'Error deleting user: ' + err.message);
+    return res.status(500).json({ success: false, error: 'Failed to delete user profile' });
+  }
+});
+
+// PATCH /api/auth/users/:id/status - Toggle user active status
+authRouter.patch('/users/:id/status', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+    const validation = AuthService.validateToken(token);
+    const { isActive } = req.body;
+
+    const result = await AuthService.toggleUserStatus(req.params.id, Boolean(isActive), validation.session?.userId);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    logger.error('AUTH_TOGGLE_USER_ERR', 'Error toggling user status: ' + err.message);
+    return res.status(500).json({ success: false, error: 'Failed to update user status' });
+  }
+});

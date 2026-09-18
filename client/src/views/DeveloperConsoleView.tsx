@@ -5,14 +5,15 @@ import { CampaignDiagnosticsView } from './CampaignDiagnosticsView.js';
 import { ImportLogsView } from './ImportLogsView.js';
 import { AuditLogsView } from './AuditLogsView.js';
 import { SenderActivityView } from './SenderActivityView.js';
-import { Activity, ShieldCheck, GitCommit, UploadCloud, FileSearch, ArrowLeft, UserCheck } from 'lucide-react';
+import { UserManagementView } from './UserManagementView.js';
+import { Activity, ShieldCheck, GitCommit, UploadCloud, FileSearch, ArrowLeft, UserCheck, Users } from 'lucide-react';
 
 interface DeveloperConsoleViewProps {
   onBackToDashboard?: () => void;
 }
 
 export const DeveloperConsoleView: React.FC<DeveloperConsoleViewProps> = ({ onBackToDashboard }) => {
-  const [subTab, setSubTab] = useState<'sender' | 'health' | 'tracer' | 'diagnostics' | 'imports' | 'audit'>('sender');
+  const [subTab, setSubTab] = useState<'sender' | 'profiles' | 'health' | 'tracer' | 'diagnostics' | 'imports' | 'audit'>('profiles');
 
   return (
     <div>
@@ -74,6 +75,20 @@ export const DeveloperConsoleView: React.FC<DeveloperConsoleViewProps> = ({ onBa
 
         {/* Sub Navigation Pills */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setSubTab('profiles')}
+            className="btn btn-sm"
+            style={{
+              backgroundColor: subTab === 'profiles' ? 'var(--uni-red)' : '#222',
+              color: '#FFFFFF',
+              border: subTab === 'profiles' ? '1px solid #DC2626' : '1px solid #333',
+              fontWeight: subTab === 'profiles' ? 700 : 500
+            }}
+          >
+            <Users size={14} />
+            <span>User Profiles & Access</span>
+          </button>
+
           <button
             onClick={() => setSubTab('sender')}
             className="btn btn-sm"
@@ -156,6 +171,7 @@ export const DeveloperConsoleView: React.FC<DeveloperConsoleViewProps> = ({ onBa
       </div>
 
       {/* Render Sub Tab */}
+      {subTab === 'profiles' && <UserManagementView />}
       {subTab === 'sender' && <SenderActivityView />}
       {subTab === 'health' && <SystemHealthView />}
       {subTab === 'tracer' && <CorrelationTracerView />}

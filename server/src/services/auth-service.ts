@@ -408,4 +408,234 @@ export class AuthService {
 
     return senderActivities.slice(0, limit);
   }
+
+  /**
+   * List all user profiles for Developer Console
+   */
+  static async getUsers(): Promise<any[]> {
+    if (!isDbFallback()) {
+      try {
+        const rows = await executeQuery<any>(`
+          SELECT 
+            id, username, email, role, full_name, must_change_credentials, is_active, last_login_at, created_at 
+          FROM users 
+          ORDER BY created_at DESC
+        `);
+        return rows.map((r: any) => ({
+          id: r.id,
+          username: r.username,
+          email: r.email || '',
+          role: r.role,
+          fullName: r.full_name,
+          mustChangeCredentials: Boolean(r.must_change_credentials),
+          isActive: Boolean(r.is_active),
+          lastLoginAt: r.last_login_at,
+          createdAt: r.created_at
+        }));
+      } catch (err: any) {
+        logger.warn('GET_USERS_DB_ERR', 'Error fetching users from DB: ' + err.message);
+      }
+    }
+
+    const store = getMemoryStore();
+    return (store.users || []).map((u: any) => ({
+      id: u.id,
+      username: u.username,
+      email: u.email || '',
+      role: u.role,
+      fullName: u.full_name,
+      mustChangeCredentials: Boolean(u.must_change_credentials),
+      isActive: Boolean(u.is_active),
+      lastLoginAt: u.last_login_at,
+      createdAt: u.created_at
+    }));
+  }
+
+  /**
+   * Create a new user profile
+   */
+  static async createUser(params: {
+    username: string;
+    password: string;
+    fullName: string;
+    email?: string;
+    role?: 'DEVELOPER' | 'SENDER';
+    mustChangeCredentials?: boolean;
+  }, creatorUserId?: string): Promise<{ success: boolean; user?: any; error?: string }> {
+    const trimmedUsername = (params.username || '').trim();
+    const trimmedFullName = (params.fullName || '').trim();
+    const trimmedEmail = (params.email || '').trim();
+    const role = params.role === 'DEVELOPER' ? 'DEVELOPER' : 'SENDER';
+    const mustChange = params.mustChangeCredentials !== false ? 1 : 0;
+
+    if (!trimmedUsername) {
+      return { success: false, error: 'Username is required' };
+    }
+    if (!trimmedFullName) {
+      return { success: false, error: 'Full name is required' };
+    }
+    if (!params.password || params.password.length < 6) {
+      return { success: false, error: 'Initial password must be at least 6 characters long' };
+    }
+
+    // Check if username already exists
+    if (!isDbFallback()) {
+      try {
+        const rows = await executeQuery<any>(
+          'SELECT id FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1',
+          [trimmedUsername]
+        );
+        if (rows.length > 0) {
+          return { success: false, error: `Username '${trimmedUsername}' is already taken` };
+        }
+      } catch (err: any) {
+        logger.warn('CHECK_USER_ERR', 'Error checking username: ' + err.message);
+      }
+    }
+
+    const userId = `USR-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
+    const { hash, salt } = hashPassword(params.password);
+    const now = new Date().toISOString();
+
+    if (!isDbFallback()) {
+      try {
+        await executeQuery(`
+          INSERT INTO users (
+            id, username, email, password_hash, salt, role, full_name, must_change_credentials, is_active, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+        `, [
+          userId,
+          trimmedUsername,
+          trimmedEmail || null,
+          hash,
+          salt,
+          role,
+          trimmedFullName,
+          mustChange
+        ]);
+
+        const roleId = role === 'DEVELOPER' ? 'ROLE-SUPERADMIN' : 'ROLE-COMM-ADMIN';
+        await executeQuery(`
+          INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)
+          ON DUPLICATE KEY UPDATE role_id = VALUES(role_id)
+        `, [userId, roleId]);
+      } catch (err: any) {
+        return { success: false, error: 'Database error creating user: ' + err.message };
+      }
+    }
+
+    const store = getMemoryStore();
+    store.users.unshift({
+      id: userId,
+      username: trimmedUsername,
+      password_hash: hash,
+      salt,
+      role,
+      full_name: trimmedFullName,
+      email: trimmedEmail,
+      must_change_credentials: mustChange,
+      is_active: 1,
+      created_at: now
+    });
+    commitStoreMutation();
+
+    await AuditService.log({
+      userId: creatorUserId || 'DEVELOPER',
+      userRole: 'DEVELOPER',
+      action: 'USER_PROFILE_CREATED',
+      entity: 'USER_PROFILE',
+      entityId: userId,
+      ipAddress: '127.0.0.1',
+      userAgent: 'Developer Console',
+      success: true,
+      metadata: {
+        created_username: trimmedUsername,
+        created_full_name: trimmedFullName,
+        assigned_role: role
+      }
+    });
+
+    return {
+      success: true,
+      user: {
+        id: userId,
+        username: trimmedUsername,
+        fullName: trimmedFullName,
+        role,
+        email: trimmedEmail,
+        mustChangeCredentials: Boolean(mustChange),
+        isActive: true,
+        createdAt: now
+      }
+    };
+  }
+
+  /**
+   * Delete user profile (protects main Developer account)
+   */
+  static async deleteUser(userId: string, currentUserId?: string): Promise<{ success: boolean; error?: string }> {
+    if (userId === currentUserId) {
+      return { success: false, error: 'You cannot delete your own active session account' };
+    }
+    if (userId === 'USR-DEV-001') {
+      return { success: false, error: 'Cannot delete the primary root developer account' };
+    }
+
+    if (!isDbFallback()) {
+      try {
+        await executeQuery('DELETE FROM user_roles WHERE user_id = ?', [userId]);
+        await executeQuery('DELETE FROM users WHERE id = ?', [userId]);
+      } catch (err: any) {
+        return { success: false, error: 'Database error deleting user: ' + err.message };
+      }
+    }
+
+    const store = getMemoryStore();
+    store.users = store.users.filter((u: any) => u.id !== userId);
+    commitStoreMutation();
+
+    await AuditService.log({
+      userId: currentUserId || 'DEVELOPER',
+      userRole: 'DEVELOPER',
+      action: 'USER_PROFILE_DELETED',
+      entity: 'USER_PROFILE',
+      entityId: userId,
+      ipAddress: '127.0.0.1',
+      userAgent: 'Developer Console',
+      success: true,
+      metadata: { deleted_user_id: userId }
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Toggle user active status
+   */
+  static async toggleUserStatus(userId: string, isActive: boolean, currentUserId?: string): Promise<{ success: boolean; error?: string }> {
+    if (userId === currentUserId && !isActive) {
+      return { success: false, error: 'You cannot deactivate your own active session account' };
+    }
+    if (userId === 'USR-DEV-001' && !isActive) {
+      return { success: false, error: 'Cannot deactivate the primary root developer account' };
+    }
+
+    const activeNum = isActive ? 1 : 0;
+    if (!isDbFallback()) {
+      try {
+        await executeQuery('UPDATE users SET is_active = ?, updated_at = NOW() WHERE id = ?', [activeNum, userId]);
+      } catch (err: any) {
+        return { success: false, error: 'Database error updating user status: ' + err.message };
+      }
+    }
+
+    const store = getMemoryStore();
+    const u = store.users.find((x: any) => x.id === userId);
+    if (u) {
+      u.is_active = activeNum;
+      commitStoreMutation();
+    }
+
+    return { success: true };
+  }
 }

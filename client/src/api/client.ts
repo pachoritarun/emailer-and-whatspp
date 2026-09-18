@@ -252,6 +252,57 @@ export const api = {
       }
     });
     return res.json();
+  },
+
+  // User Profile Management (Developer Mode)
+  async getUsers(): Promise<{ success: boolean; users: any[]; error?: string }> {
+    const token = localStorage.getItem('jecrc_auth_token');
+    const res = await fetch(`${API_BASE}/auth/users`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+    });
+    return res.json();
+  },
+
+  async createUser(data: {
+    username: string;
+    password: string;
+    fullName: string;
+    email?: string;
+    role?: 'DEVELOPER' | 'SENDER';
+    mustChangeCredentials?: boolean;
+  }): Promise<{ success: boolean; user?: any; error?: string }> {
+    const token = localStorage.getItem('jecrc_auth_token');
+    const res = await fetch(`${API_BASE}/auth/users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
+  async deleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
+    const token = localStorage.getItem('jecrc_auth_token');
+    const res = await fetch(`${API_BASE}/auth/users/${userId}`, {
+      method: 'DELETE',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+    });
+    return res.json();
+  },
+
+  async toggleUserStatus(userId: string, isActive: boolean): Promise<{ success: boolean; error?: string }> {
+    const token = localStorage.getItem('jecrc_auth_token');
+    const res = await fetch(`${API_BASE}/auth/users/${userId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ isActive })
+    });
+    return res.json();
   }
 };
 
