@@ -82,6 +82,20 @@ export const api = {
     return res.json();
   },
 
+  async deleteContact(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    const res = await fetch(`${API_BASE}/contacts/${id}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+
+  async clearAllContacts(): Promise<{ success: boolean; message?: string; error?: string }> {
+    const res = await fetch(`${API_BASE}/contacts/clear`, {
+      method: 'POST'
+    });
+    return res.json();
+  },
+
   async getImportLogs(): Promise<{ success: boolean; import_logs: ImportLog[] }> {
     const res = await fetch(`${API_BASE}/contacts/import-logs`);
     return res.json();
@@ -92,6 +106,7 @@ export const api = {
     filename: string;
     default_category: string;
     default_department: string;
+    clear_existing?: boolean;
   }): Promise<{
     success: boolean;
     import_code: string;

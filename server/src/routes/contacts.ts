@@ -69,6 +69,60 @@ contactsRouter.get('/', async (req, res) => {
   }
 });
 
+// DELETE /api/contacts/:id - Remove individual contact
+contactsRouter.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await executeQuery('DELETE FROM campaign_recipients WHERE contact_id = ?', [id]);
+    await executeQuery('DELETE FROM contact_consent WHERE contact_id = ?', [id]);
+    await executeQuery('DELETE FROM contacts WHERE id = ?', [id]);
+
+    await AuditService.log({
+      userId: (req as any).user?.id || 'USR-001',
+      userRole: (req as any).user?.role || 'SENDER',
+      action: 'DELETE_CONTACT',
+      entity: 'CONTACT',
+      entityId: id,
+      ipAddress: req.ip || req.socket.remoteAddress || '127.0.0.1',
+      userAgent: req.headers['user-agent'],
+      success: true,
+      metadata: { contactId: id }
+    });
+
+    logger.info('CONTACT_DELETED', `Contact ${id} deleted successfully`);
+    res.json({ success: true, message: 'Contact removed successfully' });
+  } catch (err: any) {
+    logger.error('DELETE_CONTACT_ERROR', `Failed deleting contact ${req.params.id}: ${err.message}`);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/contacts/clear - Remove all contacts (e.g. wipe test numbers before Excel import)
+contactsRouter.post('/clear', async (req, res) => {
+  try {
+    await executeQuery('DELETE FROM campaign_recipients');
+    await executeQuery('DELETE FROM contact_consent');
+    await executeQuery('DELETE FROM contacts');
+
+    await AuditService.log({
+      userId: (req as any).user?.id || 'USR-001',
+      userRole: (req as any).user?.role || 'SENDER',
+      action: 'CLEAR_ALL_CONTACTS',
+      entity: 'CONTACTS_DIRECTORY',
+      ipAddress: req.ip || req.socket.remoteAddress || '127.0.0.1',
+      userAgent: req.headers['user-agent'],
+      success: true,
+      metadata: { note: 'Purged all contacts to prepare clean registry' }
+    });
+
+    logger.info('ALL_CONTACTS_CLEARED', 'All contacts and test numbers cleared successfully');
+    res.json({ success: true, message: 'All contacts and test numbers have been cleared successfully' });
+  } catch (err: any) {
+    logger.error('CLEAR_CONTACTS_ERROR', `Failed clearing contacts: ${err.message}`);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/contacts/template - Download Sample Excel Template
 contactsRouter.get('/template', (req, res) => {
   const sampleData = [
@@ -167,10 +221,22 @@ const DEPT_MAP: Record<string, string> = {
 // POST /api/contacts/upload - Real Excel / CSV Parsing & MySQL Storage
 contactsRouter.post('/upload', async (req, res) => {
   const startTime = Date.now();
-  const { file_base64, filename, default_category, default_department } = req.body;
+  const { file_base64, filename, default_category, default_department, clear_existing } = req.body;
 
   if (!file_base64) {
     return res.status(400).json({ success: false, error: 'No file data received' });
+  }
+
+  // If requested, purge previous contacts/test numbers before importing the new batch
+  if (clear_existing === true || clear_existing === 'true') {
+    try {
+      await executeQuery('DELETE FROM campaign_recipients');
+      await executeQuery('DELETE FROM contact_consent');
+      await executeQuery('DELETE FROM contacts');
+      logger.info('CONTACTS_PURGED_BEFORE_UPLOAD', 'Purged existing contacts prior to fresh spreadsheet import');
+    } catch (clearErr: any) {
+      logger.warn('CONTACTS_PURGE_WARN', `Pre-import clear warning: ${clearErr.message}`);
+    }
   }
 
   const cleanFilename = filename || 'University_Recipients.xlsx';

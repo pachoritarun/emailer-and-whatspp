@@ -11,7 +11,8 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  FileText
+  FileText,
+  Trash2
 } from 'lucide-react';
 
 export const ContactsView: React.FC = () => {
@@ -24,13 +25,16 @@ export const ContactsView: React.FC = () => {
     alumni: 0
   });
 
-  // Modal State
+  // Modal & Action State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [defaultCategory, setDefaultCategory] = useState('STUDENT');
   const [defaultDepartment, setDefaultDepartment] = useState('DEP-CS');
+  const [clearExisting, setClearExisting] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
+  const [isClearing, setIsClearing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadContacts = () => {
     api.getContacts().then(res => {
@@ -45,6 +49,45 @@ export const ContactsView: React.FC = () => {
   useEffect(() => {
     loadContacts();
   }, []);
+
+  const handleDeleteContact = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to remove "${name}" from the contact directory?`)) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      const res = await api.deleteContact(id);
+      if (res.success) {
+        loadContacts();
+      } else {
+        alert('Failed to delete contact: ' + (res.error || 'Server error'));
+      }
+    } catch (err: any) {
+      alert('Error deleting contact: ' + err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleClearAllContacts = async () => {
+    if (!window.confirm(`⚠️ Are you sure you want to remove ALL ${total} contacts and test numbers?\n\nThis will empty the directory so you can import a fresh Excel sheet.`)) {
+      return;
+    }
+    setIsClearing(true);
+    try {
+      const res = await api.clearAllContacts();
+      if (res.success) {
+        alert('All contacts and test numbers have been successfully removed!');
+        loadContacts();
+      } else {
+        alert('Failed to clear contacts: ' + (res.error || 'Server error'));
+      }
+    } catch (err: any) {
+      alert('Error clearing contacts: ' + err.message);
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -77,7 +120,8 @@ export const ContactsView: React.FC = () => {
           file_base64: base64,
           filename: selectedFile.name,
           default_category: defaultCategory,
-          default_department: defaultDepartment
+          default_department: defaultDepartment,
+          clear_existing: clearExisting
         });
 
         if (res.success) {
@@ -168,6 +212,26 @@ export const ContactsView: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
+          {contacts.length > 0 && (
+            <button
+              onClick={handleClearAllContacts}
+              disabled={isClearing}
+              className="btn btn-secondary btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                color: '#B91C1C',
+                borderColor: '#FCA5A5',
+                backgroundColor: '#FEF2F2'
+              }}
+              title="Purge all contacts and test numbers to upload a fresh Excel file"
+            >
+              <Trash2 size={14} />
+              <span>{isClearing ? 'Clearing Contacts...' : 'Clear All Test Contacts'}</span>
+            </button>
+          )}
+
           <button
             onClick={handleDownloadTemplate}
             className="btn btn-secondary btn-sm"
@@ -216,12 +280,13 @@ export const ContactsView: React.FC = () => {
                 <th>Department</th>
                 <th>WhatsApp Consent</th>
                 <th>Date Added</th>
+                <th style={{ textAlign: 'center', width: '80px' }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {contacts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--uni-muted)' }}>
+                  <td colSpan={7} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--uni-muted)' }}>
                     <Users size={36} color="var(--uni-muted)" style={{ margin: '0 auto 10px' }} />
                     <div style={{ fontWeight: 700, color: 'var(--uni-black)', fontSize: '0.95rem', marginBottom: '4px' }}>
                       No Contacts Enrolled Yet
@@ -270,6 +335,30 @@ export const ContactsView: React.FC = () => {
                     </td>
                     <td style={{ fontSize: '0.78rem', color: 'var(--uni-muted)' }}>
                       {new Date(c.created_at).toLocaleDateString()}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteContact(c.id, c.name)}
+                        disabled={deletingId === c.id}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#DC2626',
+                          cursor: 'pointer',
+                          padding: '6px',
+                          borderRadius: '4px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'background 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#FEE2E2')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        title={`Remove ${c.name} from directory`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -400,6 +489,32 @@ export const ContactsView: React.FC = () => {
                   <div style={{ color: 'var(--uni-muted)', lineHeight: 1.4 }}>
                     Columns detected automatically: <strong>Full Name</strong>, <strong>Mobile Number</strong> (e.g. 919309313044), <strong>Roll Number</strong> (optional), and <strong>Category</strong> (optional).
                   </div>
+                </div>
+
+                {/* Clear / Replace Existing Contacts Toggle */}
+                <div style={{
+                  padding: '12px 14px',
+                  backgroundColor: clearExisting ? '#FEF2F2' : '#F9FAFB',
+                  border: '1px solid ' + (clearExisting ? '#FCA5A5' : 'var(--uni-border-gray)'),
+                  borderRadius: 'var(--radius-subtle)',
+                  transition: 'all 0.2s ease'
+                }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={clearExisting}
+                      onChange={(e) => setClearExisting(e.target.checked)}
+                      style={{ marginTop: '2px', accentColor: 'var(--uni-red)', width: '16px', height: '16px' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--uni-black)' }}>
+                        Replace existing contacts (Remove test numbers before importing)
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--uni-muted)', marginTop: '2px' }}>
+                        When checked, previously enrolled test contacts are purged so only the new Excel recipients receive your broadcast notices.
+                      </div>
+                    </div>
+                  </label>
                 </div>
 
                 {/* Success Result Callout */}
