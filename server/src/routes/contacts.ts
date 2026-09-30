@@ -123,6 +123,32 @@ contactsRouter.post('/clear', async (req, res) => {
   }
 });
 
+// GET /api/contacts/departments - List all distinct departments in the system
+contactsRouter.get('/departments', async (req, res) => {
+  try {
+    const rawDepts = await executeQuery(`
+      SELECT 
+        d.id, 
+        d.code, 
+        d.name,
+        COUNT(c.id) as contact_count
+      FROM departments d
+      LEFT JOIN contacts c ON d.id = c.department_id
+      GROUP BY d.id
+      ORDER BY d.name ASC
+    `);
+    res.json({
+      success: true,
+      departments: Array.isArray(rawDepts) ? rawDepts : []
+    });
+  } catch (err: any) {
+    res.json({
+      success: true,
+      departments: []
+    });
+  }
+});
+
 // GET /api/contacts/template - Download Sample Excel Template
 contactsRouter.get('/template', (req, res) => {
   const sampleData = [
@@ -204,20 +230,6 @@ const CATEGORY_MAP: Record<string, string> = {
   ALUMNI: 'CAT-ALM'
 };
 
-// Helper department mapping
-const DEPT_MAP: Record<string, string> = {
-  CS: 'DEP-CS',
-  COMPUTERSCIENCE: 'DEP-CS',
-  ENGINEERING: 'DEP-CS',
-  MED: 'DEP-MED',
-  MEDICINE: 'DEP-MED',
-  LAW: 'DEP-LAW',
-  BUS: 'DEP-BUS',
-  BUSINESS: 'DEP-BUS',
-  REG: 'DEP-REG',
-  REGISTRAR: 'DEP-REG'
-};
-
 // POST /api/contacts/upload - Real Excel / CSV Parsing & MySQL Storage
 contactsRouter.post('/upload', async (req, res) => {
   const startTime = Date.now();
@@ -258,19 +270,72 @@ contactsRouter.post('/upload', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No data rows found in spreadsheet' });
     }
 
+    // 1. Detect file type based on column headers
+    const firstRowKeys = Object.keys(rawRows[0] || {}).map(k => k.trim().toLowerCase());
+    const isStudentSheet = firstRowKeys.some(k => /regno|reg_no|student[\s_]*name|semester|session/i.test(k));
+    const isEmployeeSheet = firstRowKeys.some(k => /idno|id_no|stafftype|staff_type|phone_no|phoneno|officialemail/i.test(k));
+
+    // 2. Fetch all existing departments for fast in-memory lookup
+    const deptRows = await executeQuery('SELECT id, code, name FROM departments');
+    const deptCache = new Map<string, string>(); // lowercase name -> id
+    if (Array.isArray(deptRows)) {
+      deptRows.forEach((d: any) => {
+        if (d.name) deptCache.set(d.name.trim().toLowerCase(), d.id);
+        if (d.code) deptCache.set(d.code.trim().toLowerCase(), d.id);
+      });
+    }
+
+    // Helper: auto-discover or create department on the fly
+    async function resolveDepartment(rawDeptName: string): Promise<string> {
+      const cleanName = (rawDeptName || '').trim();
+      if (!cleanName) return deptCache.get('cs') || 'DEP-CS';
+      const key = cleanName.toLowerCase();
+      if (deptCache.has(key)) {
+        return deptCache.get(key)!;
+      }
+
+      // Check standard abbreviations
+      if (/^cs$|computer\s*science/i.test(cleanName)) return deptCache.get('cs') || 'DEP-CS';
+      if (/^med$|medicine/i.test(cleanName)) return deptCache.get('med') || 'DEP-MED';
+      if (/^law$/i.test(cleanName)) return deptCache.get('law') || 'DEP-LAW';
+      if (/^bus$|business|management/i.test(cleanName)) return deptCache.get('bus') || 'DEP-BUS';
+      if (/^reg$|registrar/i.test(cleanName)) return deptCache.get('reg') || 'DEP-REG';
+
+      // Generate a clean department code from department name (e.g. "Mechanical Engineering" -> "DEP-MECH")
+      const words = cleanName.replace(/[^a-zA-Z0-9\s]/g, '').trim().split(/\s+/);
+      let shortCode = words.map(w => w.slice(0, 4).toUpperCase()).join('');
+      if (shortCode.length < 2) shortCode = cleanName.slice(0, 4).toUpperCase();
+      const newCode = `DEP-${shortCode.slice(0, 8)}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+      const newId = crypto.randomUUID();
+
+      try {
+        await executeQuery(
+          'INSERT INTO departments (id, code, name) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name)',
+          [newId, newCode, cleanName.slice(0, 150)]
+        );
+        deptCache.set(key, newId);
+        deptCache.set(newCode.toLowerCase(), newId);
+        return newId;
+      } catch (err: any) {
+        logger.warn('DEPT_CREATE_FAIL', `Could not insert department '${cleanName}': ${err.message}`);
+        return deptCache.get('cs') || 'DEP-CS';
+      }
+    }
+
     let rowsImported = 0;
     let rowsRejected = 0;
     let invalidPhones = 0;
+    let duplicatePhones = 0;
     const seenHashesInBatch = new Set<string>();
 
     for (let i = 0; i < rawRows.length; i++) {
       const row = rawRows[i];
 
-      // Flexible column discovery
+      // Smart column discovery per row
       let rawName = '';
       let rawPhone = '';
-      let rawCategory = default_category || 'STUDENT';
-      let rawDept = default_department || 'DEP-CS';
+      let rawCategory = '';
+      let rawDept = '';
       let rawRoll = '';
 
       for (const [key, val] of Object.entries(row)) {
@@ -278,15 +343,26 @@ contactsRouter.post('/upload', async (req, res) => {
         const v = String(val).trim();
         if (!v) continue;
 
-        if (/roll|reg|enroll|emp/i.test(k) || k === 'id') {
-          rawRoll = v;
-        } else if (/phone|mobile|cell|contact/i.test(k)) {
-          rawPhone = v;
-        } else if (/name/i.test(k)) {
-          rawName = v;
-        } else if (/cat|role|group/i.test(k)) {
-          rawCategory = v;
-        } else if (/dept|branch/i.test(k)) {
+        // 1. Institutional ID: Idno, Regno, Roll Number, etc.
+        if (/^(idno|id_no|empid|emp_id|employee_id|regno|reg_no|roll|enroll)/i.test(k) || k === 'id') {
+          if (!rawRoll) rawRoll = v;
+        }
+        // 2. Mobile Phone (avoid email columns)
+        else if (/phone|mobile|cell|contact/i.test(k) && !/email/i.test(k)) {
+          if (!rawPhone) rawPhone = v;
+        }
+        // 3. Name (Ignore Session_Name, College, Degree, Department)
+        else if (/^(student[\s_]*name|full[\s_]*name|emp[\s_]*name|faculty[\s_]*name|name)$/i.test(k) || (/name/i.test(k) && !/session|college|degree|dept/i.test(k))) {
+          if (!rawName) rawName = v;
+        }
+        // 4. Role / Staff Type / Category
+        else if (/^(category|role|group|stafftype|staff_type)$/i.test(k)) {
+          if (!rawCategory) rawCategory = v;
+        }
+        // 5. Department / Degree / College
+        else if (/^(dept|department|branch)$/i.test(k)) {
+          rawDept = v;
+        } else if (!rawDept && /^(degree|college)$/i.test(k)) {
           rawDept = v;
         }
       }
@@ -303,6 +379,7 @@ contactsRouter.post('/upload', async (req, res) => {
       const pHash = hashPhone(cleaned);
       if (seenHashesInBatch.has(pHash)) {
         rowsRejected++;
+        duplicatePhones++;
         continue;
       }
       seenHashesInBatch.add(pHash);
@@ -312,15 +389,29 @@ contactsRouter.post('/upload', async (req, res) => {
       const firstName = nameParts[0] || 'Recipient';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // Category extraction & normalization
-      const normCatKey = String(rawCategory).toUpperCase().trim();
-      let categoryId = CATEGORY_MAP[normCatKey] || CATEGORY_MAP[default_category || 'STUDENT'] || 'CAT-STU';
+      // Smart Category Resolution:
+      let categoryId = 'CAT-STU';
+      const catVal = (rawCategory || '').toLowerCase();
+      if (catVal.includes('teach') || catVal.includes('faculty') || catVal.includes('prof') || catVal.includes('lectur')) {
+        categoryId = 'CAT-FAC';
+      } else if (catVal.includes('non-teach') || catVal.includes('staff') || catVal.includes('admin') || catVal.includes('office') || catVal.includes('clerk') || catVal.includes('technical')) {
+        categoryId = 'CAT-STF';
+      } else if (catVal.includes('alumni') || catVal.includes('graduat')) {
+        categoryId = 'CAT-ALM';
+      } else if (catVal.includes('student')) {
+        categoryId = 'CAT-STU';
+      } else if (isEmployeeSheet) {
+        categoryId = 'CAT-FAC';
+      } else if (isStudentSheet) {
+        categoryId = 'CAT-STU';
+      } else if (default_category) {
+        categoryId = CATEGORY_MAP[String(default_category).toUpperCase()] || 'CAT-STU';
+      }
 
-      // Department normalization
-      const normDeptKey = String(rawDept).toUpperCase().replace(/[^A-Z]/g, '');
-      let deptId = DEPT_MAP[normDeptKey] || DEPT_MAP[default_department || 'DEP-CS'] || 'DEP-CS';
+      // Dynamic Department Resolution:
+      const deptId = await resolveDepartment(rawDept || default_department);
 
-      // External Identifier
+      // External Identifier (real Idno or Regno)
       const extId = rawRoll || `UNI-${Date.now().toString().slice(-6)}-${String(i + 1).padStart(3, '0')}`;
       const contactId = crypto.randomUUID();
       const pEncrypted = encryptPhone(cleaned);
@@ -371,7 +462,7 @@ contactsRouter.post('/upload', async (req, res) => {
       await executeQuery(`
         INSERT INTO import_logs (
           id, import_code, filename, uploader_id, file_size_bytes, rows_detected, rows_processed, rows_imported, rows_updated, rows_duplicated, rows_rejected, invalid_phone_records, invalid_category_records, missing_required_fields, processing_duration_ms, status
-        ) VALUES (?, ?, ?, 'USR-001', ?, ?, ?, ?, 0, 0, ?, ?, 0, 0, ?, 'COMPLETED')
+        ) VALUES (?, ?, ?, 'USR-001', ?, ?, ?, ?, 0, ?, ?, ?, 0, 0, ?, 'COMPLETED')
       `, [
         importId,
         importCode,
@@ -380,6 +471,7 @@ contactsRouter.post('/upload', async (req, res) => {
         rawRows.length,
         rawRows.length,
         rowsImported,
+        duplicatePhones,
         rowsRejected,
         invalidPhones,
         durationMs
@@ -402,7 +494,9 @@ contactsRouter.post('/upload', async (req, res) => {
         filename: cleanFilename,
         rows_detected: rawRows.length,
         rows_imported: rowsImported,
-        rows_rejected: rowsRejected
+        rows_rejected: rowsRejected,
+        invalid_phone_records: invalidPhones,
+        duplicate_phone_records: duplicatePhones
       }
     });
 
@@ -414,6 +508,7 @@ contactsRouter.post('/upload', async (req, res) => {
       rows_imported: rowsImported,
       rows_rejected: rowsRejected,
       invalid_phone_records: invalidPhones,
+      duplicate_phone_records: duplicatePhones,
       duration_ms: durationMs
     });
   } catch (err: any) {

@@ -96,6 +96,11 @@ export const api = {
     return res.json();
   },
 
+  async getDepartments(): Promise<{ success: boolean; departments: Array<{ id: string; code: string; name: string; contact_count: number }> }> {
+    const res = await fetch(`${API_BASE}/contacts/departments`);
+    return res.json();
+  },
+
   async getImportLogs(): Promise<{ success: boolean; import_logs: ImportLog[] }> {
     const res = await fetch(`${API_BASE}/contacts/import-logs`);
     return res.json();
@@ -104,8 +109,8 @@ export const api = {
   async uploadContactsExcel(data: {
     file_base64: string;
     filename: string;
-    default_category: string;
-    default_department: string;
+    default_category?: string;
+    default_department?: string;
     clear_existing?: boolean;
   }): Promise<{
     success: boolean;

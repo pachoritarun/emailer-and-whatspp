@@ -12,7 +12,8 @@ import {
   AlertCircle,
   X,
   FileText,
-  Trash2
+  Trash2,
+  Sparkles
 } from 'lucide-react';
 
 export const ContactsView: React.FC = () => {
@@ -28,8 +29,6 @@ export const ContactsView: React.FC = () => {
   // Modal & Action State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [defaultCategory, setDefaultCategory] = useState('STUDENT');
-  const [defaultDepartment, setDefaultDepartment] = useState('DEP-CS');
   const [clearExisting, setClearExisting] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
@@ -119,8 +118,6 @@ export const ContactsView: React.FC = () => {
         const res = await api.uploadContactsExcel({
           file_base64: base64,
           filename: selectedFile.name,
-          default_category: defaultCategory,
-          default_department: defaultDepartment,
           clear_existing: clearExisting
         });
 
@@ -430,40 +427,23 @@ export const ContactsView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Category & Department Selection */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Target Recipient Category</label>
-                    <select
-                      className="form-select"
-                      value={defaultCategory}
-                      onChange={(e) => setDefaultCategory(e.target.value)}
-                    >
-                      <option value="STUDENT">Enrolled Students (STUDENT)</option>
-                      <option value="FACULTY">Teachers & Faculty (FACULTY)</option>
-                      <option value="STAFF">Administrative Staff (STAFF)</option>
-                      <option value="ALUMNI">Graduated Alumni (ALUMNI)</option>
-                    </select>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--uni-muted)', marginTop: '3px' }}>
-                      Default category assigned if not specified per row in sheet
+                {/* Smart Auto-Detection Indicator */}
+                <div style={{
+                  padding: '12px 14px',
+                  backgroundColor: '#EFF6FF',
+                  border: '1px solid #BFDBFE',
+                  borderRadius: 'var(--radius-subtle)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px'
+                }}>
+                  <Sparkles size={18} color="#2563EB" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E3A8A' }}>
+                      Smart Auto-Mapping Active
                     </div>
-                  </div>
-
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Department / Branch</label>
-                    <select
-                      className="form-select"
-                      value={defaultDepartment}
-                      onChange={(e) => setDefaultDepartment(e.target.value)}
-                    >
-                      <option value="DEP-CS">Computer Science & Eng</option>
-                      <option value="DEP-MED">School of Medicine</option>
-                      <option value="DEP-LAW">Faculty of Law</option>
-                      <option value="DEP-BUS">Business Administration</option>
-                      <option value="DEP-REG">General / Registrar</option>
-                    </select>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--uni-muted)', marginTop: '3px' }}>
-                      Department scope for filtering
+                    <div style={{ fontSize: '0.74rem', color: '#1E40AF', marginTop: '2px', lineHeight: 1.4 }}>
+                      The system automatically identifies whether your sheet contains Students or Faculty/Staff, extracts official IDs (<code>Idno</code> / <code>Regno</code>), and links each person's exact department & degree directly from the spreadsheet.
                     </div>
                   </div>
                 </div>
@@ -477,7 +457,7 @@ export const ContactsView: React.FC = () => {
                   fontSize: '0.78rem'
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--uni-black)' }}>Expected Column Headers:</span>
+                    <span style={{ fontWeight: 600, color: 'var(--uni-black)' }}>Supported Column Headers:</span>
                     <button
                       type="button"
                       onClick={handleDownloadTemplate}
@@ -487,7 +467,8 @@ export const ContactsView: React.FC = () => {
                     </button>
                   </div>
                   <div style={{ color: 'var(--uni-muted)', lineHeight: 1.4 }}>
-                    Columns detected automatically: <strong>Full Name</strong>, <strong>Mobile Number</strong> (e.g. 919309313044), <strong>Roll Number</strong> (optional), and <strong>Category</strong> (optional).
+                    • <strong>Employees:</strong> <code>Idno</code>, <code>Name</code>, <code>Department</code>, <code>StaffType</code>, <code>PhoneNo</code>, <code>EmailID</code><br />
+                    • <strong>Students:</strong> <code>Regno</code>, <code>Student Name</code>, <code>College</code>, <code>Degree</code>, <code>Semester</code>, <code>Mobile No</code>
                   </div>
                 </div>
 

@@ -61,6 +61,9 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
     ALL: 0
   });
 
+  // Dynamic Departments from MySQL
+  const [availableDepartments, setAvailableDepartments] = useState<Array<{ id: string; code: string; name: string; contact_count?: number }>>([]);
+
   // Load real templates and real contact counts from MySQL whenever modal opens
   const fetchTemplates = async () => {
     setLoadingTemplates(true);
@@ -98,6 +101,11 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
           });
         }
       });
+      api.getDepartments().then(res => {
+        if (res.success && Array.isArray(res.departments)) {
+          setAvailableDepartments(res.departments);
+        }
+      }).catch(() => {});
     }
   }, [isOpen]);
 
@@ -333,11 +341,12 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
                     value={department}
                     onChange={(e) => setDepartment(e.target.value)}
                   >
-                    <option value="ALL">All Departments</option>
-                    <option value="CS">Computer Science</option>
-                    <option value="MED">Medicine & Health</option>
-                    <option value="LAW">Faculty of Law</option>
-                    <option value="BUS">Business School</option>
+                    <option value="ALL">All Departments (Entire University)</option>
+                    {availableDepartments.map(d => (
+                      <option key={d.id} value={d.code || d.name}>
+                        {d.name} {d.contact_count ? `(${d.contact_count.toLocaleString()})` : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

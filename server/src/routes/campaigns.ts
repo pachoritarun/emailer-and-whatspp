@@ -247,15 +247,27 @@ campaignRouter.post('/launch', async (req, res) => {
   // 1. Calculate Target & Eligible Audience count from REAL contacts
   let targetContacts: any[] = [];
   try {
-    const catCondition = audience?.category && audience.category !== 'ALL'
-      ? 'WHERE cat.code = ?'
-      : '';
-    const params = catCondition ? [audience.category] : [];
+    const whereParts: string[] = [];
+    const params: any[] = [];
+
+    if (audience?.category && audience.category !== 'ALL') {
+      whereParts.push('cat.code = ?');
+      params.push(audience.category);
+    }
+
+    if (audience?.department && audience.department !== 'ALL') {
+      whereParts.push('(d.code = ? OR d.id = ? OR d.name = ?)');
+      params.push(audience.department, audience.department, audience.department);
+    }
+
+    const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
+
     targetContacts = await executeQuery(`
       SELECT c.id, c.external_identifier, c.first_name, c.last_name 
       FROM contacts c
       LEFT JOIN categories cat ON c.category_id = cat.id
-      ${catCondition}
+      LEFT JOIN departments d ON c.department_id = d.id
+      ${whereSql}
     `, params);
   } catch (err) {
     targetContacts = [];
