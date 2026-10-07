@@ -58,6 +58,7 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
     FACULTY: 0,
     STAFF: 0,
     ALUMNI: 0,
+    CANDIDATE: 0,
     ALL: 0
   });
 
@@ -97,6 +98,7 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
             FACULTY: res.breakdown.faculty || 0,
             STAFF: res.breakdown.staff || 0,
             ALUMNI: res.breakdown.alumni || 0,
+            CANDIDATE: res.breakdown.candidates || 0,
             ALL: res.total || 0
           });
         }
@@ -273,6 +275,7 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
       case 'FACULTY': return `${count} faculty member${count !== 1 ? 's' : ''}`;
       case 'STAFF': return `${count} administrative staff member${count !== 1 ? 's' : ''}`;
       case 'ALUMNI': return `${count} verified graduate${count !== 1 ? 's' : ''}`;
+      case 'CANDIDATE': return `${count} interview candidate${count !== 1 ? 's' : ''}`;
       default: return `${count} total university contact${count !== 1 ? 's' : ''}`;
     }
   };
@@ -328,6 +331,7 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
                   >
                     <option value="STUDENT">Students</option>
                     <option value="FACULTY">Teachers / Faculty</option>
+                    <option value="CANDIDATE">Interview Candidates / Applicants</option>
                     <option value="STAFF">Administrative Staff</option>
                     <option value="ALUMNI">Alumni</option>
                     <option value="ALL">Entire University</option>

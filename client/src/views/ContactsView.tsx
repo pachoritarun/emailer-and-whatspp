@@ -23,7 +23,8 @@ export const ContactsView: React.FC = () => {
     students: 0,
     faculty: 0,
     staff: 0,
-    alumni: 0
+    alumni: 0,
+    candidates: 0
   });
 
   // Modal & Action State
@@ -145,7 +146,7 @@ export const ContactsView: React.FC = () => {
       {/* Category Overview Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '16px',
         marginBottom: '20px'
       }}>
@@ -187,6 +188,16 @@ export const ContactsView: React.FC = () => {
             {breakdown.alumni.toLocaleString()}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--uni-muted)' }}>Category: ALUMNI</div>
+        </div>
+
+        <div className="uni-card" style={{ padding: '16px 20px', borderLeft: '4px solid #1E40AF' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--uni-muted)', textTransform: 'uppercase' }}>
+            Interview Candidates
+          </div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1E40AF', margin: '4px 0' }}>
+            {(breakdown.candidates || 0).toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--uni-muted)' }}>Category: CANDIDATE</div>
         </div>
       </div>
 
@@ -468,7 +479,8 @@ export const ContactsView: React.FC = () => {
                   </div>
                   <div style={{ color: 'var(--uni-muted)', lineHeight: 1.4 }}>
                     • <strong>Employees:</strong> <code>Idno</code>, <code>Name</code>, <code>Department</code>, <code>StaffType</code>, <code>PhoneNo</code>, <code>EmailID</code><br />
-                    • <strong>Students:</strong> <code>Regno</code>, <code>Student Name</code>, <code>College</code>, <code>Degree</code>, <code>Semester</code>, <code>Mobile No</code>
+                    • <strong>Students:</strong> <code>Regno</code>, <code>Student Name</code>, <code>College</code>, <code>Degree</code>, <code>Semester</code>, <code>Mobile No</code><br />
+                    • <strong>Candidates / Applicants:</strong> <code>Application ID</code>, <code>Candidate Name</code>, <code>Mobile</code>, <code>Remarks</code>
                   </div>
                 </div>
 

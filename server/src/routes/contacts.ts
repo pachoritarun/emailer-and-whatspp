@@ -38,7 +38,8 @@ contactsRouter.get('/', async (req, res) => {
       students: 0,
       faculty: 0,
       staff: 0,
-      alumni: 0
+      alumni: 0,
+      candidates: 0
     };
 
     let total = 0;
@@ -50,6 +51,7 @@ contactsRouter.get('/', async (req, res) => {
         if (r.code === 'FACULTY') breakdown.faculty = cnt;
         if (r.code === 'STAFF') breakdown.staff = cnt;
         if (r.code === 'ALUMNI') breakdown.alumni = cnt;
+        if (r.code === 'CANDIDATE') breakdown.candidates = cnt;
       });
     }
 
@@ -227,7 +229,8 @@ const CATEGORY_MAP: Record<string, string> = {
   STUDENT: 'CAT-STU',
   FACULTY: 'CAT-FAC',
   STAFF: 'CAT-STF',
-  ALUMNI: 'CAT-ALM'
+  ALUMNI: 'CAT-ALM',
+  CANDIDATE: 'CAT-CAN'
 };
 
 // POST /api/contacts/upload - Real Excel / CSV Parsing & MySQL Storage
@@ -237,6 +240,17 @@ contactsRouter.post('/upload', async (req, res) => {
 
   if (!file_base64) {
     return res.status(400).json({ success: false, error: 'No file data received' });
+  }
+
+  // Ensure CANDIDATE category exists in MySQL to avoid foreign key failures
+  try {
+    await executeQuery(`
+      INSERT INTO categories (id, code, name, description) VALUES
+      ('CAT-CAN', 'CANDIDATE', 'Interview Candidates', 'Job and admission interview candidates')
+      ON DUPLICATE KEY UPDATE name=VALUES(name)
+    `);
+  } catch (catErr: any) {
+    // non-fatal
   }
 
   // If requested, purge previous contacts/test numbers before importing the new batch
@@ -272,8 +286,9 @@ contactsRouter.post('/upload', async (req, res) => {
 
     // 1. Detect file type based on column headers
     const firstRowKeys = Object.keys(rawRows[0] || {}).map(k => k.trim().toLowerCase());
-    const isStudentSheet = firstRowKeys.some(k => /regno|reg_no|student[\s_]*name|semester|session/i.test(k));
-    const isEmployeeSheet = firstRowKeys.some(k => /idno|id_no|stafftype|staff_type|phone_no|phoneno|officialemail/i.test(k));
+    const isCandidateSheet = firstRowKeys.some(k => /candidate|applicant|application[\s_]*id|app[\s_]*id|reviewer/i.test(k));
+    const isStudentSheet = !isCandidateSheet && firstRowKeys.some(k => /regno|reg_no|student[\s_]*name|semester|session/i.test(k));
+    const isEmployeeSheet = !isCandidateSheet && firstRowKeys.some(k => /idno|id_no|stafftype|staff_type|phone_no|phoneno|officialemail/i.test(k));
 
     // 2. Fetch all existing departments for fast in-memory lookup
     const deptRows = await executeQuery('SELECT id, code, name FROM departments');
@@ -343,8 +358,8 @@ contactsRouter.post('/upload', async (req, res) => {
         const v = String(val).trim();
         if (!v) continue;
 
-        // 1. Institutional ID: Idno, Regno, Roll Number, etc.
-        if (/^(idno|id_no|empid|emp_id|employee_id|regno|reg_no|roll|enroll)/i.test(k) || k === 'id') {
+        // 1. Institutional / Application ID: Idno, Regno, Application ID, Roll Number, etc.
+        if (/^(idno|id_no|empid|emp_id|employee_id|regno|reg_no|roll|enroll|application[\s_]*id|app[\s_]*id|applicant)/i.test(k) || k === 'id') {
           if (!rawRoll) rawRoll = v;
         }
         // 2. Mobile Phone (avoid email columns)
@@ -352,15 +367,15 @@ contactsRouter.post('/upload', async (req, res) => {
           if (!rawPhone) rawPhone = v;
         }
         // 3. Name (Ignore Session_Name, College, Degree, Department)
-        else if (/^(student[\s_]*name|full[\s_]*name|emp[\s_]*name|faculty[\s_]*name|name)$/i.test(k) || (/name/i.test(k) && !/session|college|degree|dept/i.test(k))) {
+        else if (/^(candidate[\s_]*name|student[\s_]*name|full[\s_]*name|emp[\s_]*name|faculty[\s_]*name|name)$/i.test(k) || (/name/i.test(k) && !/session|college|degree|dept/i.test(k))) {
           if (!rawName) rawName = v;
         }
         // 4. Role / Staff Type / Category
         else if (/^(category|role|group|stafftype|staff_type)$/i.test(k)) {
           if (!rawCategory) rawCategory = v;
         }
-        // 5. Department / Degree / College
-        else if (/^(dept|department|branch)$/i.test(k)) {
+        // 5. Department / Degree / College / Post
+        else if (/^(dept|department|branch|post|position|designation)$/i.test(k)) {
           rawDept = v;
         } else if (!rawDept && /^(degree|college)$/i.test(k)) {
           rawDept = v;
@@ -392,7 +407,9 @@ contactsRouter.post('/upload', async (req, res) => {
       // Smart Category Resolution:
       let categoryId = 'CAT-STU';
       const catVal = (rawCategory || '').toLowerCase();
-      if (catVal.includes('teach') || catVal.includes('faculty') || catVal.includes('prof') || catVal.includes('lectur')) {
+      if (isCandidateSheet || catVal.includes('candidate') || catVal.includes('applicant') || catVal.includes('interview')) {
+        categoryId = 'CAT-CAN';
+      } else if (catVal.includes('teach') || catVal.includes('faculty') || catVal.includes('prof') || catVal.includes('lectur')) {
         categoryId = 'CAT-FAC';
       } else if (catVal.includes('non-teach') || catVal.includes('staff') || catVal.includes('admin') || catVal.includes('office') || catVal.includes('clerk') || catVal.includes('technical')) {
         categoryId = 'CAT-STF';
@@ -409,7 +426,10 @@ contactsRouter.post('/upload', async (req, res) => {
       }
 
       // Dynamic Department Resolution:
-      const deptId = await resolveDepartment(rawDept || default_department);
+      const fallbackDept = isCandidateSheet
+        ? (/nursing/i.test(cleanFilename) ? 'Nursing Department' : 'Recruitment & Interviews')
+        : (default_department || 'DEP-CS');
+      const deptId = await resolveDepartment(rawDept || fallbackDept);
 
       // External Identifier (real Idno or Regno)
       const extId = rawRoll || `UNI-${Date.now().toString().slice(-6)}-${String(i + 1).padStart(3, '0')}`;
