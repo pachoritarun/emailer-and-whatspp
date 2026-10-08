@@ -69,13 +69,22 @@ export async function startWorkerLoop(): Promise<void> {
 
       // Check if template has header media
       let headerMedia: { type: 'image' | 'document' | 'video'; link: string; filename?: string } | undefined = undefined;
-      const mediaUrl = rawVars._header_media_url || rawVars.header_media_url || rawVars.media_url;
+      let mediaUrl = rawVars._header_media_url || rawVars.header_media_url || rawVars.media_url;
       if (mediaUrl) {
+        let cleanMediaUrl = String(mediaUrl).trim();
+        // Automatically convert Google Drive share/view links to direct binary download link
+        if (cleanMediaUrl.includes('drive.google.com')) {
+          const match = cleanMediaUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || cleanMediaUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+          if (match) {
+            cleanMediaUrl = `https://drive.usercontent.google.com/download?id=${match[1]}&export=download`;
+          }
+        }
+
         const mediaType = ((rawVars._header_media_type || rawVars.header_media_type || 'image') as string).toLowerCase() as 'image' | 'document' | 'video';
         headerMedia = {
           type: mediaType,
-          link: String(mediaUrl),
-          filename: rawVars._header_media_filename || rawVars.header_filename || (mediaType === 'document' ? 'Document.pdf' : undefined)
+          link: cleanMediaUrl,
+          filename: rawVars._header_media_filename || rawVars.header_filename || (mediaType === 'document' ? 'Important_Instructions.pdf' : undefined)
         };
       }
 

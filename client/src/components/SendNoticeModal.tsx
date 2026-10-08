@@ -249,11 +249,20 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
         variables: {
           ...variables,
           meta_template_name: activeName,
-          ...(headerType !== 'NONE' && headerMediaUrl.trim() ? {
-            _header_media_url: headerMediaUrl.trim(),
-            _header_media_type: headerType.toLowerCase(),
-            _header_media_filename: headerDocFilename.trim() || (headerType === 'DOCUMENT' ? 'University_Official_Circular.pdf' : undefined)
-          } : {})
+          ...(headerType !== 'NONE' && headerMediaUrl.trim() ? (() => {
+            let directUrl = headerMediaUrl.trim();
+            if (directUrl.includes('drive.google.com')) {
+              const match = directUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || directUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+              if (match) {
+                directUrl = `https://drive.usercontent.google.com/download?id=${match[1]}&export=download`;
+              }
+            }
+            return {
+              _header_media_url: directUrl,
+              _header_media_type: headerType.toLowerCase(),
+              _header_media_filename: headerDocFilename.trim() || (headerType === 'DOCUMENT' ? 'Important_Instructions.pdf' : undefined)
+            };
+          })() : {})
         }
       });
 
