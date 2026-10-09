@@ -679,9 +679,14 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
                           <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--uni-black)' }}>
                             Placeholder &#123;&#123;{num}&#125;&#125;
                           </label>
-                          {(num === '1' || num === 'name' || num === 'first_name' || num === 'student_name') && (
+                          {(num === '1' || num === 'name' || num === 'first_name' || num === 'student_name' || num === 'candidate_name') && (
                             <span style={{ fontSize: '0.7rem', color: '#2E7D32', fontWeight: 500 }}>
-                              Auto-populates recipient name from student/teacher registry
+                              Auto-populates recipient name from candidate/student registry
+                            </span>
+                          )}
+                          {(num === '2' || num === 'id' || num === 'app_id' || num === 'application_id' || num === 'roll' || num === 'regno') && (
+                            <span style={{ fontSize: '0.7rem', color: '#2E7D32', fontWeight: 500 }}>
+                              Auto-populates candidate Application ID (e.g. JMCHRC-APP/...) from Excel
                             </span>
                           )}
                         </div>
