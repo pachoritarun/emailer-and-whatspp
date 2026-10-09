@@ -72,8 +72,12 @@ export async function startWorkerLoop(): Promise<void> {
       let mediaUrl = rawVars._header_media_url || rawVars.header_media_url || rawVars.media_url;
       if (mediaUrl) {
         let cleanMediaUrl = String(mediaUrl).trim();
-        // Automatically convert Google Drive share/view links to direct binary download link
-        if (cleanMediaUrl.includes('drive.google.com')) {
+        // Automatically map known candidate notice links to reliable direct university endpoints to avoid Google Drive HTML virus/viewer wrappers
+        if (cleanMediaUrl.includes('1tUifwz8de_ydsgKxMdbdfCTYV5HHG2pL') || /batch[\s_]*1/i.test(cleanMediaUrl)) {
+          cleanMediaUrl = 'https://ai.jecrcuniversity.edu.in/Communication/api/media/Nursing_CBT_Batch1.pdf';
+        } else if (cleanMediaUrl.includes('1CKGhH0IU11o8b5tYyvPGXzzjF5LSvV8p') || /batch[\s_]*2/i.test(cleanMediaUrl)) {
+          cleanMediaUrl = 'https://ai.jecrcuniversity.edu.in/Communication/api/media/Nursing_CBT_Batch2.pdf';
+        } else if (cleanMediaUrl.includes('drive.google.com')) {
           const match = cleanMediaUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || cleanMediaUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
           if (match) {
             cleanMediaUrl = `https://drive.usercontent.google.com/download?id=${match[1]}&export=download`;

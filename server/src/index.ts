@@ -58,6 +58,30 @@ app.use('/api/email', emailerRouter);
 app.use('/api/send-emails', emailerRouter);
 app.use('/api/auth', authRouter);
 
+// Static Public Assets & PDFs (Delivered with explicit application/pdf for WhatsApp Cloud API)
+import path from 'path';
+import fs from 'fs';
+const publicDir = path.join(process.cwd(), 'public');
+if (!fs.existsSync(publicDir)) {
+  fs.mkdirSync(publicDir, { recursive: true });
+}
+app.use('/public', express.static(publicDir));
+app.use('/files', express.static(publicDir));
+
+app.get('/api/media/:filename', (req, res) => {
+  const safeFilename = path.basename(req.params.filename);
+  const filePath = path.join(publicDir, safeFilename);
+  if (fs.existsSync(filePath)) {
+    if (filePath.endsWith('.pdf')) {
+      res.setHeader('Content-Type', 'application/pdf');
+    }
+    res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send('File not found');
+  }
+});
+
 // Root & Health Probe
 app.get('/api/health', (req, res) => {
   res.json({
