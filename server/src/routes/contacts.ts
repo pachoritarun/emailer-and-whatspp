@@ -457,20 +457,14 @@ contactsRouter.post('/upload', async (req, res) => {
         const contactId = crypto.randomUUID();
         const pEncrypted = encryptPhone(cleaned);
 
-        // Upsert into MySQL contacts table
+        // Insert into MySQL contacts table (cleanly purging any stale conflicting records by external_identifier or phone_hash)
         try {
+          await executeQuery('DELETE FROM contacts WHERE external_identifier = ? OR phone_hash = ?', [extId, pHash]);
+
           await executeQuery(`
             INSERT INTO contacts (
               id, external_identifier, first_name, last_name, category_id, department_id, phone_hash, phone_encrypted, is_active
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-            ON DUPLICATE KEY UPDATE
-              external_identifier = VALUES(external_identifier),
-              first_name = VALUES(first_name),
-              last_name = VALUES(last_name),
-              category_id = VALUES(category_id),
-              department_id = VALUES(department_id),
-              phone_encrypted = VALUES(phone_encrypted),
-              is_active = 1
           `, [
             contactId,
             extId,

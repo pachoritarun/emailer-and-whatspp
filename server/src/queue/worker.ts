@@ -172,6 +172,7 @@ export async function startWorkerLoop(): Promise<void> {
       }
 
       // 4. Dispatch to WhatsApp Provider
+      logger.info('DISPATCHING_NOTICE', `Sending notice to ${recipientName} (${recipientPhone}): ExtID="${recipientExtId}", Params=${JSON.stringify(resolvedParameters.map(p => p.text))}`);
       const result = await WhatsAppProviderService.sendTemplateMessage({
         campaignId: job.campaign_id,
         recipientId: job.campaign_recipient_id,
