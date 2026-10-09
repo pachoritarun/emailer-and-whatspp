@@ -464,6 +464,7 @@ contactsRouter.post('/upload', async (req, res) => {
               id, external_identifier, first_name, last_name, category_id, department_id, phone_hash, phone_encrypted, is_active
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON DUPLICATE KEY UPDATE
+              external_identifier = VALUES(external_identifier),
               first_name = VALUES(first_name),
               last_name = VALUES(last_name),
               category_id = VALUES(category_id),
