@@ -277,18 +277,12 @@ contactsRouter.post('/upload', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Uploaded spreadsheet is empty' });
     }
 
-    const worksheet = workbook.Sheets[firstSheetName];
-    const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-
-    if (!Array.isArray(rawRows) || rawRows.length === 0) {
-      return res.status(400).json({ success: false, error: 'No data rows found in spreadsheet' });
-    }
-
-    // 1. Detect file type based on column headers
-    const firstRowKeys = Object.keys(rawRows[0] || {}).map(k => k.trim().toLowerCase());
-    const isCandidateSheet = firstRowKeys.some(k => /candidate|applicant|application[\s_]*id|app[\s_]*id|reviewer/i.test(k));
-    const isStudentSheet = !isCandidateSheet && firstRowKeys.some(k => /regno|reg_no|student[\s_]*name|semester|session/i.test(k));
-    const isEmployeeSheet = !isCandidateSheet && firstRowKeys.some(k => /idno|id_no|stafftype|staff_type|phone_no|phoneno|officialemail/i.test(k));
+    let rowsImported = 0;
+    let rowsRejected = 0;
+    let invalidPhones = 0;
+    let duplicatePhones = 0;
+    let totalDetectedRows = 0;
+    const seenHashesInBatch = new Set<string>();
 
     // 2. Fetch all existing departments for fast in-memory lookup
     const deptRows = await executeQuery('SELECT id, code, name FROM departments');
@@ -316,7 +310,7 @@ contactsRouter.post('/upload', async (req, res) => {
       if (/^bus$|business|management/i.test(cleanName)) return deptCache.get('bus') || 'DEP-BUS';
       if (/^reg$|registrar/i.test(cleanName)) return deptCache.get('reg') || 'DEP-REG';
 
-      // Generate a clean department code from department name (e.g. "Mechanical Engineering" -> "DEP-MECH")
+      // Generate a clean department code from department name
       const words = cleanName.replace(/[^a-zA-Z0-9\s]/g, '').trim().split(/\s+/);
       let shortCode = words.map(w => w.slice(0, 4).toUpperCase()).join('');
       if (shortCode.length < 2) shortCode = cleanName.slice(0, 4).toUpperCase();
@@ -337,142 +331,174 @@ contactsRouter.post('/upload', async (req, res) => {
       }
     }
 
-    let rowsImported = 0;
-    let rowsRejected = 0;
-    let invalidPhones = 0;
-    let duplicatePhones = 0;
-    const seenHashesInBatch = new Set<string>();
+    // Process EVERY sheet in the workbook (e.g. '8 30 Consol' and '10 30 Consol')
+    for (const sheetName of workbook.SheetNames) {
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet) continue;
+      const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      if (!Array.isArray(rawRows) || rawRows.length === 0) continue;
+      totalDetectedRows += rawRows.length;
 
-    for (let i = 0; i < rawRows.length; i++) {
-      const row = rawRows[i];
+      // 1. Detect sheet type based on sheet name and column headers
+      const cleanSheetName = sheetName.trim().toLowerCase();
+      const firstRowKeys = Object.keys(rawRows[0] || {}).map(k => k.trim().toLowerCase());
+      const isCandidateSheet = firstRowKeys.some(k => /candidate|applicant|application[\s_]*id|app[\s_]*id|reviewer/i.test(k))
+        || /consol|nursing|batch|cbt/i.test(cleanSheetName);
+      const isStudentSheet = !isCandidateSheet && firstRowKeys.some(k => /regno|reg_no|student[\s_]*name|semester|session/i.test(k));
+      const isEmployeeSheet = !isCandidateSheet && firstRowKeys.some(k => /idno|id_no|stafftype|staff_type|phone_no|phoneno|officialemail/i.test(k));
 
-      // Smart column discovery per row
-      let rawName = '';
-      let rawPhone = '';
-      let rawCategory = '';
-      let rawDept = '';
-      let rawRoll = '';
-
-      for (const [key, val] of Object.entries(row)) {
-        const k = key.trim().toLowerCase();
-        const v = String(val).trim();
-        if (!v) continue;
-
-        // 1. Institutional / Application ID: Idno, Regno, Application ID, Roll Number, etc.
-        if (/^(idno|id_no|empid|emp_id|employee_id|regno|reg_no|roll|enroll|application[\s_]*id|app[\s_]*id|applicant)/i.test(k) || k === 'id') {
-          if (!rawRoll) rawRoll = v;
-        }
-        // 2. Mobile Phone (avoid email columns)
-        else if (/phone|mobile|cell|contact/i.test(k) && !/email/i.test(k)) {
-          if (!rawPhone) rawPhone = v;
-        }
-        // 3. Name (Ignore Session_Name, College, Degree, Department)
-        else if (/^(candidate[\s_]*name|student[\s_]*name|full[\s_]*name|emp[\s_]*name|faculty[\s_]*name|name)$/i.test(k) || (/name/i.test(k) && !/session|college|degree|dept/i.test(k))) {
-          if (!rawName) rawName = v;
-        }
-        // 4. Role / Staff Type / Category
-        else if (/^(category|role|group|stafftype|staff_type)$/i.test(k)) {
-          if (!rawCategory) rawCategory = v;
-        }
-        // 5. Department / Degree / College / Post
-        else if (/^(dept|department|branch|post|position|designation)$/i.test(k)) {
-          rawDept = v;
-        } else if (!rawDept && /^(degree|college)$/i.test(k)) {
-          rawDept = v;
-        }
+      // Batch / Department naming based on sheet name (e.g. '8 30 Consol' -> Batch 1; '10 30 Consol' -> Batch 2)
+      let defaultSheetDept = 'Nursing Department';
+      if (/8[\s_:]*30|batch[\s_]*1/i.test(cleanSheetName)) {
+        defaultSheetDept = 'Nursing - Batch 1 (8:30 AM)';
+      } else if (/10[\s_:]*30|batch[\s_]*2/i.test(cleanSheetName)) {
+        defaultSheetDept = 'Nursing - Batch 2 (10:30 AM)';
+      } else if (/nursing/i.test(cleanFilename)) {
+        defaultSheetDept = `Nursing (${sheetName.trim()})`;
       }
 
-      // Check phone validity
-      const cleaned = cleanPhoneNumber(rawPhone);
-      if (!cleaned || cleaned.length < 10 || cleaned.length > 15) {
-        rowsRejected++;
-        invalidPhones++;
-        continue;
+      for (let i = 0; i < rawRows.length; i++) {
+        const row = rawRows[i];
+
+        // Smart column discovery per row
+        let rawName = '';
+        let rawPhone = '';
+        let rawCategory = '';
+        let rawDept = '';
+        let rawRoll = '';
+
+        for (const [key, val] of Object.entries(row)) {
+          const k = key.trim().toLowerCase();
+          const v = String(val).trim();
+          if (!v) continue;
+
+          // Check for row-level timing column (e.g. 8:30 or 10:30)
+          if (/timing|time|batch/i.test(k)) {
+            if (/8[\s_:]*30/i.test(v)) {
+              rawDept = 'Nursing - Batch 1 (8:30 AM)';
+            } else if (/10[\s_:]*30/i.test(v)) {
+              rawDept = 'Nursing - Batch 2 (10:30 AM)';
+            }
+          }
+
+          // 1. Institutional / Application ID: Idno, Regno, Application ID, Roll Number, etc.
+          if (/^(idno|id_no|empid|emp_id|employee_id|regno|reg_no|roll|enroll|application[\s_]*id|app[\s_]*id|applicant)/i.test(k) || k === 'id') {
+            if (!rawRoll) rawRoll = v;
+          }
+          // 2. Mobile Phone (avoid email columns)
+          else if (/phone|mobile|cell|contact/i.test(k) && !/email/i.test(k)) {
+            if (!rawPhone) rawPhone = v;
+          }
+          // 3. Name (Ignore Session_Name, College, Degree, Department)
+          else if (/^(candidate[\s_]*name|student[\s_]*name|full[\s_]*name|emp[\s_]*name|faculty[\s_]*name|name)$/i.test(k) || (/name/i.test(k) && !/session|college|degree|dept/i.test(k))) {
+            if (!rawName) rawName = v;
+          }
+          // 4. Role / Staff Type / Category
+          else if (/^(category|role|group|stafftype|staff_type)$/i.test(k)) {
+            if (!rawCategory) rawCategory = v;
+          }
+          // 5. Department / Degree / College / Post
+          else if (/^(dept|department|branch|post|position|designation)$/i.test(k)) {
+            if (!rawDept) rawDept = v;
+          } else if (!rawDept && /^(degree|college)$/i.test(k)) {
+            rawDept = v;
+          }
+        }
+
+        // Check phone validity
+        const cleaned = cleanPhoneNumber(rawPhone);
+        if (!cleaned || cleaned.length < 10 || cleaned.length > 15) {
+          rowsRejected++;
+          invalidPhones++;
+          continue;
+        }
+
+        // Check duplicate within this batch
+        const pHash = hashPhone(cleaned);
+        if (seenHashesInBatch.has(pHash)) {
+          rowsRejected++;
+          duplicatePhones++;
+          continue;
+        }
+        seenHashesInBatch.add(pHash);
+
+        // Name extraction
+        const nameParts = (rawName || 'Recipient').trim().split(/\s+/);
+        const firstName = nameParts[0] || 'Recipient';
+        const lastName = nameParts.slice(1).join(' ') || '';
+
+        // Smart Category Resolution:
+        let categoryId = 'CAT-STU';
+        const catVal = (rawCategory || '').toLowerCase();
+        if (isCandidateSheet || catVal.includes('candidate') || catVal.includes('applicant') || catVal.includes('interview')) {
+          categoryId = 'CAT-CAN';
+        } else if (catVal.includes('teach') || catVal.includes('faculty') || catVal.includes('prof') || catVal.includes('lectur')) {
+          categoryId = 'CAT-FAC';
+        } else if (catVal.includes('non-teach') || catVal.includes('staff') || catVal.includes('admin') || catVal.includes('office') || catVal.includes('clerk') || catVal.includes('technical')) {
+          categoryId = 'CAT-STF';
+        } else if (catVal.includes('alumni') || catVal.includes('graduat')) {
+          categoryId = 'CAT-ALM';
+        } else if (catVal.includes('student')) {
+          categoryId = 'CAT-STU';
+        } else if (isEmployeeSheet) {
+          categoryId = 'CAT-FAC';
+        } else if (isStudentSheet) {
+          categoryId = 'CAT-STU';
+        } else if (default_category) {
+          categoryId = CATEGORY_MAP[String(default_category).toUpperCase()] || 'CAT-STU';
+        }
+
+        // Dynamic Department Resolution:
+        const fallbackDept = isCandidateSheet ? defaultSheetDept : (default_department || 'DEP-CS');
+        const deptId = await resolveDepartment(rawDept || fallbackDept);
+
+        // External Identifier (real Idno or Regno)
+        const extId = rawRoll || `UNI-${Date.now().toString().slice(-6)}-${String(i + 1).padStart(3, '0')}`;
+        const contactId = crypto.randomUUID();
+        const pEncrypted = encryptPhone(cleaned);
+
+        // Upsert into MySQL contacts table
+        try {
+          await executeQuery(`
+            INSERT INTO contacts (
+              id, external_identifier, first_name, last_name, category_id, department_id, phone_hash, phone_encrypted, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+            ON DUPLICATE KEY UPDATE
+              first_name = VALUES(first_name),
+              last_name = VALUES(last_name),
+              category_id = VALUES(category_id),
+              department_id = VALUES(department_id),
+              phone_encrypted = VALUES(phone_encrypted),
+              is_active = 1
+          `, [
+            contactId,
+            extId,
+            firstName,
+            lastName,
+            categoryId,
+            deptId,
+            pHash,
+            pEncrypted
+          ]);
+
+          // Insert consent
+          await executeQuery(`
+            INSERT INTO contact_consent (
+              id, contact_id, channel, status, consent_source
+            ) VALUES (?, ?, 'WHATSAPP', 'OPTED_IN', 'EXCEL_IMPORT')
+            ON DUPLICATE KEY UPDATE status = 'OPTED_IN'
+          `, [crypto.randomUUID(), contactId]);
+
+          rowsImported++;
+        } catch (dbErr: any) {
+          logger.warn('CONTACT_ROW_INSERT_FAIL', `Row ${i + 1} insert failed: ${dbErr.message}`);
+          rowsRejected++;
+        }
       }
+    }
 
-      // Check duplicate within this batch
-      const pHash = hashPhone(cleaned);
-      if (seenHashesInBatch.has(pHash)) {
-        rowsRejected++;
-        duplicatePhones++;
-        continue;
-      }
-      seenHashesInBatch.add(pHash);
-
-      // Name extraction
-      const nameParts = (rawName || 'Recipient').trim().split(/\s+/);
-      const firstName = nameParts[0] || 'Recipient';
-      const lastName = nameParts.slice(1).join(' ') || '';
-
-      // Smart Category Resolution:
-      let categoryId = 'CAT-STU';
-      const catVal = (rawCategory || '').toLowerCase();
-      if (isCandidateSheet || catVal.includes('candidate') || catVal.includes('applicant') || catVal.includes('interview')) {
-        categoryId = 'CAT-CAN';
-      } else if (catVal.includes('teach') || catVal.includes('faculty') || catVal.includes('prof') || catVal.includes('lectur')) {
-        categoryId = 'CAT-FAC';
-      } else if (catVal.includes('non-teach') || catVal.includes('staff') || catVal.includes('admin') || catVal.includes('office') || catVal.includes('clerk') || catVal.includes('technical')) {
-        categoryId = 'CAT-STF';
-      } else if (catVal.includes('alumni') || catVal.includes('graduat')) {
-        categoryId = 'CAT-ALM';
-      } else if (catVal.includes('student')) {
-        categoryId = 'CAT-STU';
-      } else if (isEmployeeSheet) {
-        categoryId = 'CAT-FAC';
-      } else if (isStudentSheet) {
-        categoryId = 'CAT-STU';
-      } else if (default_category) {
-        categoryId = CATEGORY_MAP[String(default_category).toUpperCase()] || 'CAT-STU';
-      }
-
-      // Dynamic Department Resolution:
-      const fallbackDept = isCandidateSheet
-        ? (/nursing/i.test(cleanFilename) ? 'Nursing Department' : 'Recruitment & Interviews')
-        : (default_department || 'DEP-CS');
-      const deptId = await resolveDepartment(rawDept || fallbackDept);
-
-      // External Identifier (real Idno or Regno)
-      const extId = rawRoll || `UNI-${Date.now().toString().slice(-6)}-${String(i + 1).padStart(3, '0')}`;
-      const contactId = crypto.randomUUID();
-      const pEncrypted = encryptPhone(cleaned);
-
-      // Upsert into MySQL contacts table
-      try {
-        await executeQuery(`
-          INSERT INTO contacts (
-            id, external_identifier, first_name, last_name, category_id, department_id, phone_hash, phone_encrypted, is_active
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-          ON DUPLICATE KEY UPDATE
-            first_name = VALUES(first_name),
-            last_name = VALUES(last_name),
-            category_id = VALUES(category_id),
-            department_id = VALUES(department_id),
-            phone_encrypted = VALUES(phone_encrypted),
-            is_active = 1
-        `, [
-          contactId,
-          extId,
-          firstName,
-          lastName,
-          categoryId,
-          deptId,
-          pHash,
-          pEncrypted
-        ]);
-
-        // Insert consent
-        await executeQuery(`
-          INSERT INTO contact_consent (
-            id, contact_id, channel, status, consent_source
-          ) VALUES (?, ?, 'WHATSAPP', 'OPTED_IN', 'EXCEL_IMPORT')
-          ON DUPLICATE KEY UPDATE status = 'OPTED_IN'
-        `, [crypto.randomUUID(), contactId]);
-
-        rowsImported++;
-      } catch (dbErr: any) {
-        logger.warn('CONTACT_ROW_INSERT_FAIL', `Row ${i + 1} insert failed: ${dbErr.message}`);
-        rowsRejected++;
-      }
+    if (totalDetectedRows === 0) {
+      return res.status(400).json({ success: false, error: 'No data rows found across any sheets in spreadsheet' });
     }
 
     const durationMs = Date.now() - startTime;
@@ -488,8 +514,8 @@ contactsRouter.post('/upload', async (req, res) => {
         importCode,
         cleanFilename,
         buffer.length,
-        rawRows.length,
-        rawRows.length,
+        totalDetectedRows,
+        totalDetectedRows,
         rowsImported,
         duplicatePhones,
         rowsRejected,
@@ -512,7 +538,7 @@ contactsRouter.post('/upload', async (req, res) => {
       success: true,
       metadata: {
         filename: cleanFilename,
-        rows_detected: rawRows.length,
+        rows_detected: totalDetectedRows,
         rows_imported: rowsImported,
         rows_rejected: rowsRejected,
         invalid_phone_records: invalidPhones,
@@ -524,7 +550,7 @@ contactsRouter.post('/upload', async (req, res) => {
       success: true,
       import_code: importCode,
       filename: cleanFilename,
-      rows_detected: rawRows.length,
+      rows_detected: totalDetectedRows,
       rows_imported: rowsImported,
       rows_rejected: rowsRejected,
       invalid_phone_records: invalidPhones,
