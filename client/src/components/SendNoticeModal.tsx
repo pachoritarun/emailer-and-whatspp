@@ -125,12 +125,20 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
   // Initialize variable defaults whenever template changes
   useEffect(() => {
     const isNameField = (tag: string) =>
-      tag === '1' || tag === 'name' || tag === 'first_name' || tag === 'student_name' || tag === 'recipient_name';
+      tag === '1' || tag === 'name' || tag === 'first_name' || tag === 'student_name' || tag === 'recipient_name' || tag === 'candidate_name';
+    const isIdField = (tag: string) =>
+      tag === '2' || tag === 'id' || tag === 'app_id' || tag === 'application_id' || tag === 'roll' || tag === 'regno';
 
     if (!isCustomTemplate && currentTemplate) {
       const initial: Record<string, string> = {};
       detectedPlaceholders.forEach((tag, idx) => {
-        initial[tag] = isNameField(tag) ? '[Student Name]' : (currentTemplate.sampleVariables[idx] || '');
+        if (isNameField(tag)) {
+          initial[tag] = '[Auto: Recipient Full Name]';
+        } else if (isIdField(tag)) {
+          initial[tag] = '[Auto: Application ID / Roll No]';
+        } else {
+          initial[tag] = currentTemplate.sampleVariables[idx] || '';
+        }
       });
       setVariables(initial);
 
@@ -144,7 +152,13 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
         const initial: Record<string, string> = { ...prev };
         detectedPlaceholders.forEach(tag => {
           if (!initial[tag]) {
-            initial[tag] = isNameField(tag) ? '[Student Name]' : '';
+            if (isNameField(tag)) {
+              initial[tag] = '[Auto: Recipient Full Name]';
+            } else if (isIdField(tag)) {
+              initial[tag] = '[Auto: Application ID / Roll No]';
+            } else {
+              initial[tag] = '';
+            }
           }
         });
         return initial;
@@ -165,7 +179,9 @@ export const SendNoticeModal: React.FC<SendNoticeModalProps> = ({
     }
     let preview = activeTemplateText;
     detectedPlaceholders.forEach(num => {
-      const val = variables[num] || `{{${num}}}`;
+      let val = variables[num] || `{{${num}}}`;
+      if (val.includes('[Auto: Recipient Full Name]') || val.includes('[Student Name]')) val = 'Neelam Arora';
+      if (val.includes('[Auto: Application ID') || val.includes('Application ID') || val.includes('Roll No')) val = 'JMCHRC-APP/2026-000964';
       preview = preview.replace(new RegExp(`\\{\\{${num}\\}\\}`, 'g'), val);
     });
     return preview;

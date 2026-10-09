@@ -93,14 +93,18 @@ export async function startWorkerLoop(): Promise<void> {
       let recipientPhone = process.env.TEST_RECIPIENT_PHONE || process.env.RECIPIENT_PHONE_NUMBER || '';
 
       // Look up real contact in MySQL if available
+      let recipientExtId = '';
       if (recipient?.contact_id && recipient.contact_id !== 'CNT-LOCAL-TEST') {
         try {
           const rawContact = await executeQuery(
-            'SELECT first_name, last_name, phone_encrypted FROM contacts WHERE id = ?',
+            'SELECT external_identifier, first_name, last_name, phone_encrypted FROM contacts WHERE id = ?',
             [recipient.contact_id]
           );
           if (Array.isArray(rawContact) && rawContact.length > 0) {
             const c = rawContact[0];
+            if (c.external_identifier) {
+              recipientExtId = String(c.external_identifier).trim();
+            }
             const nameParts = [c.first_name, c.last_name]
               .filter(Boolean)
               .map((s: string) => s.trim())
@@ -120,33 +124,50 @@ export async function startWorkerLoop(): Promise<void> {
         }
       }
 
+      // Helper to dynamically resolve template variables per recipient
+      const resolveParamVal = (k: string, rawVal: string): string => {
+        let val = String(rawVal || '');
+
+        // 1. Candidate / Student Full Name resolution
+        if (
+          val.includes('[Auto: Recipient Full Name]') ||
+          val.includes('[Student Name]') ||
+          val.includes('[Candidate Name]') ||
+          val === 'Aarav Sharma' ||
+          val === 'Student' ||
+          (k === '1' && (val.toLowerCase().includes('name') || !val))
+        ) {
+          return recipientName;
+        }
+
+        // 2. Application ID / Roll Number / External ID resolution
+        if (
+          val.includes('Application ID') ||
+          val.includes('App ID') ||
+          val.includes('Roll') ||
+          val.includes('Regno') ||
+          val.startsWith('[') ||
+          k === '2' ||
+          k.toLowerCase().includes('id') ||
+          k.toLowerCase().includes('roll')
+        ) {
+          if (recipientExtId) {
+            return recipientExtId;
+          }
+        }
+
+        return val;
+      };
+
       let resolvedParameters: Array<{ type: 'text'; text: string; parameter_name?: string }> = [];
       if (isPositional) {
         const sortedKeys = paramKeys.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
         resolvedParameters = sortedKeys.map(k => {
-          let val = String(rawVars[k] || '');
-          if (
-            val.includes('[Auto: Recipient Full Name]') ||
-            val.includes('[Student Name]') ||
-            val === 'Aarav Sharma' ||
-            (k === '1' && val.toLowerCase().includes('name'))
-          ) {
-            val = recipientName;
-          }
-          return { type: 'text' as const, text: val };
+          return { type: 'text' as const, text: resolveParamVal(k, rawVars[k]) };
         });
       } else {
         resolvedParameters = paramKeys.map(k => {
-          let val = String(rawVars[k] || '');
-          if (
-            val.includes('[Auto: Recipient Full Name]') ||
-            val.includes('[Student Name]') ||
-            val === 'Aarav Sharma' ||
-            k.toLowerCase().includes('name')
-          ) {
-            val = recipientName;
-          }
-          return { type: 'text' as const, parameter_name: k, text: val };
+          return { type: 'text' as const, parameter_name: k, text: resolveParamVal(k, rawVars[k]) };
         });
       }
 
