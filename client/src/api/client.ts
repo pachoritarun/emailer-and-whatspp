@@ -140,6 +140,20 @@ export const api = {
     return res.json();
   },
 
+  async recategorizeContacts(fromCategory?: string, toCategory: string = 'STUDENT'): Promise<{
+    success: boolean;
+    affected_rows: number;
+    message: string;
+    error?: string;
+  }> {
+    const res = await fetch(`${API_BASE}/contacts/recategorize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from_category: fromCategory, to_category: toCategory })
+    });
+    return res.json();
+  },
+
   // Audit Logs
   async getAuditLogs(): Promise<{ success: boolean; total: number; logs: AuditLog[] }> {
     const res = await fetch(`${API_BASE}/audit-logs`);

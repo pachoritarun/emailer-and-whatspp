@@ -30,10 +30,12 @@ export const ContactsView: React.FC = () => {
   // Modal & Action State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadCategory, setUploadCategory] = useState<'STUDENT' | 'AUTO' | 'FACULTY' | 'STAFF' | 'CANDIDATE' | 'ALUMNI'>('STUDENT');
   const [clearExisting, setClearExisting] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [isClearing, setIsClearing] = useState(false);
+  const [isRecategorizing, setIsRecategorizing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadContacts = () => {
@@ -49,6 +51,27 @@ export const ContactsView: React.FC = () => {
   useEffect(() => {
     loadContacts();
   }, []);
+
+  const handleRecategorizeToStudents = async () => {
+    const candidateCount = breakdown.candidates || 0;
+    if (!window.confirm(`Convert all ${candidateCount > 0 ? candidateCount : 'current'} contacts registered under "Interview Candidates" to "Enrolled Students"?`)) {
+      return;
+    }
+    setIsRecategorizing(true);
+    try {
+      const res = await api.recategorizeContacts('CANDIDATE', 'STUDENT');
+      if (res.success) {
+        alert(`Success: ${res.affected_rows} contacts reclassified as Enrolled Students!`);
+        loadContacts();
+      } else {
+        alert('Error reclassifying: ' + (res.error || 'Server error'));
+      }
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    } finally {
+      setIsRecategorizing(false);
+    }
+  };
 
   const handleDeleteContact = async (id: string, name: string) => {
     if (!window.confirm(`Are you sure you want to remove "${name}" from the contact directory?`)) {
@@ -119,6 +142,7 @@ export const ContactsView: React.FC = () => {
         const res = await api.uploadContactsExcel({
           file_base64: base64,
           filename: selectedFile.name,
+          default_category: uploadCategory === 'AUTO' ? undefined : uploadCategory,
           clear_existing: clearExisting
         });
 
@@ -220,6 +244,27 @@ export const ContactsView: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
+          {(breakdown.candidates || 0) > 0 && (
+            <button
+              onClick={handleRecategorizeToStudents}
+              disabled={isRecategorizing}
+              className="btn btn-secondary btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                color: '#1E40AF',
+                borderColor: '#93C5FD',
+                backgroundColor: '#EFF6FF',
+                fontWeight: 600
+              }}
+              title="Convert all contacts currently classified as Candidates into Enrolled Students"
+            >
+              <Users size={14} />
+              <span>{isRecategorizing ? 'Reclassifying...' : `Convert ${breakdown.candidates} Candidates to Students`}</span>
+            </button>
+          )}
+
           {contacts.length > 0 && (
             <button
               onClick={handleClearAllContacts}
@@ -438,6 +483,41 @@ export const ContactsView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Explicit Target Audience Category Selector */}
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600 }}>Target Audience Category</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--uni-muted)' }}>Guarantees exact classification</span>
+                  </label>
+                  <select
+                    value={uploadCategory}
+                    onChange={(e: any) => setUploadCategory(e.target.value)}
+                    className="form-control"
+                    style={{
+                      height: '42px',
+                      borderRadius: 'var(--radius-subtle)',
+                      borderColor: uploadCategory === 'STUDENT' ? 'var(--uni-red)' : 'var(--uni-border-gray)',
+                      fontWeight: 600,
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <option value="STUDENT">🎓 Enrolled Students (Default - Recommended for student lists)</option>
+                    <option value="AUTO">⚡ Auto-Detect (Smart Column & Header Detection)</option>
+                    <option value="FACULTY">👨‍🏫 Academic Faculty & Teachers</option>
+                    <option value="STAFF">🏢 Administrative & Operational Staff</option>
+                    <option value="CANDIDATE">📋 Interview Candidates (Job / CBT Applicants)</option>
+                    <option value="ALUMNI">🏛️ Graduated University Alumni</option>
+                  </select>
+                  <div style={{ fontSize: '0.74rem', color: uploadCategory === 'STUDENT' ? '#1B5E20' : 'var(--uni-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+                    {uploadCategory === 'STUDENT' && '✓ All records in this spreadsheet will be strictly registered as Enrolled Students (CAT-STU).'}
+                    {uploadCategory === 'AUTO' && 'Heuristic detection: Checks column headers (Regno vs Idno vs Candidate) to determine category.'}
+                    {uploadCategory === 'FACULTY' && '✓ All records in this spreadsheet will be registered under Faculty (CAT-FAC).'}
+                    {uploadCategory === 'STAFF' && '✓ All records in this spreadsheet will be registered under Staff (CAT-STF).'}
+                    {uploadCategory === 'CANDIDATE' && '⚠️ Only use this for entrance examination / interview applicants (CAT-CAN).'}
+                    {uploadCategory === 'ALUMNI' && '✓ All records in this spreadsheet will be registered under Alumni (CAT-ALM).'}
+                  </div>
+                </div>
+
                 {/* Smart Auto-Detection Indicator */}
                 <div style={{
                   padding: '12px 14px',
@@ -451,10 +531,10 @@ export const ContactsView: React.FC = () => {
                   <Sparkles size={18} color="#2563EB" style={{ flexShrink: 0, marginTop: '2px' }} />
                   <div>
                     <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1E3A8A' }}>
-                      Smart Auto-Mapping Active
+                      Smart Department & Degree Auto-Mapping Active
                     </div>
                     <div style={{ fontSize: '0.74rem', color: '#1E40AF', marginTop: '2px', lineHeight: 1.4 }}>
-                      The system automatically identifies whether your sheet contains Students or Faculty/Staff, extracts official IDs (<code>Idno</code> / <code>Regno</code>), and links each person's exact department & degree directly from the spreadsheet.
+                      The system extracts official IDs (<code>Idno</code> / <code>Regno</code>), and links each recipient's exact department & degree directly from the spreadsheet columns.
                     </div>
                   </div>
                 </div>

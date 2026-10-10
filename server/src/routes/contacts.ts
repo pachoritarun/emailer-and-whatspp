@@ -125,6 +125,36 @@ contactsRouter.post('/clear', async (req, res) => {
   }
 });
 
+// POST /api/contacts/recategorize - Bulk reassign category (e.g. reclassify misclassified contacts)
+contactsRouter.post('/recategorize', async (req, res) => {
+  try {
+    const { from_category, to_category } = req.body;
+    const targetCatId = CATEGORY_MAP[String(to_category || 'STUDENT').toUpperCase()] || 'CAT-STU';
+    
+    let query = 'UPDATE contacts SET category_id = ?';
+    const params: any[] = [targetCatId];
+
+    if (from_category && from_category !== 'ALL') {
+      const sourceCatId = CATEGORY_MAP[String(from_category).toUpperCase()] || from_category;
+      query += ' WHERE category_id = ?';
+      params.push(sourceCatId);
+    }
+
+    const result: any = await executeQuery(query, params);
+    const affected = result?.affectedRows ?? 0;
+    
+    logger.info('CONTACTS_RECATEGORIZED', `Bulk reclassified ${affected} contacts to ${targetCatId}`);
+    res.json({
+      success: true,
+      affected_rows: affected,
+      message: `Successfully reclassified ${affected} contacts to ${to_category || 'STUDENT'}`
+    });
+  } catch (err: any) {
+    logger.error('RECATEGORIZE_ERROR', `Failed reclassifying contacts: ${err.message}`);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/contacts/departments - List all distinct departments in the system
 contactsRouter.get('/departments', async (req, res) => {
   try {
@@ -342,19 +372,32 @@ contactsRouter.post('/upload', async (req, res) => {
       // 1. Detect sheet type based on sheet name and column headers
       const cleanSheetName = sheetName.trim().toLowerCase();
       const firstRowKeys = Object.keys(rawRows[0] || {}).map(k => k.trim().toLowerCase());
-      const isCandidateSheet = firstRowKeys.some(k => /candidate|applicant|application[\s_]*id|app[\s_]*id|reviewer/i.test(k))
-        || /consol|nursing|batch|cbt/i.test(cleanSheetName);
-      const isStudentSheet = !isCandidateSheet && firstRowKeys.some(k => /regno|reg_no|student[\s_]*name|semester|session/i.test(k));
-      const isEmployeeSheet = !isCandidateSheet && firstRowKeys.some(k => /idno|id_no|stafftype|staff_type|phone_no|phoneno|officialemail/i.test(k));
 
-      // Batch / Department naming based on sheet name (e.g. '8 30 Consol' -> Batch 1; '10 30 Consol' -> Batch 2)
-      let defaultSheetDept = 'Nursing Department';
-      if (/8[\s_:]*30|batch[\s_]*1/i.test(cleanSheetName)) {
-        defaultSheetDept = 'Nursing - Batch 1 (8:30 AM)';
-      } else if (/10[\s_:]*30|batch[\s_]*2/i.test(cleanSheetName)) {
-        defaultSheetDept = 'Nursing - Batch 2 (10:30 AM)';
-      } else if (/nursing/i.test(cleanFilename)) {
-        defaultSheetDept = `Nursing (${sheetName.trim()})`;
+      // Student indicators: regno, reg_no, roll, enrollment, student name, semester, etc.
+      const isStudentSheet = firstRowKeys.some(k => /regno|reg_no|registration|student[\s_]*name|studentname|roll[\s_]*no|rollno|semester|session|enrollment|degree|program|branch/i.test(k))
+        || /student|b\.?tech|bca|mca|bba|mba|b\.?sc|m\.?sc|b\.?des|enrolled/i.test(cleanSheetName);
+
+      // Employee indicators: empid, idno, stafftype, etc.
+      const isEmployeeSheet = !isStudentSheet && firstRowKeys.some(k => /empid|emp_id|employee[\s_]*id|idno|id_no|stafftype|staff_type|phone_no|phoneno|officialemail/i.test(k));
+
+      // Candidate indicators: ONLY if explicitly candidate/interview/cbt without student columns
+      const isCandidateSheet = !isStudentSheet && (
+        firstRowKeys.some(k => /candidate[\s_]*name|applicant[\s_]*name|interview[\s_]*date|reviewer/i.test(k))
+        || (/application[\s_]*id|app[\s_]*id|applicant/i.test(firstRowKeys.join(' ')) && !firstRowKeys.some(k => /student|regno|semester/i.test(k)))
+        || /interview|candidate|cbt[\s_]*exam/i.test(cleanSheetName)
+      );
+
+      // Department & Batch timing default: ONLY apply Nursing Batch default if filename or sheet mentions nursing/cbt!
+      let defaultSheetDept = default_department || 'DEP-CS';
+      const isNursingContext = /nursing|cbt/i.test(cleanFilename) || /nursing|cbt/i.test(cleanSheetName);
+      if (isNursingContext) {
+        if (/8[\s_:]*30|batch[\s_]*1/i.test(cleanSheetName)) {
+          defaultSheetDept = 'Nursing - Batch 1 (8:30 AM)';
+        } else if (/10[\s_:]*30|batch[\s_]*2/i.test(cleanSheetName)) {
+          defaultSheetDept = 'Nursing - Batch 2 (10:30 AM)';
+        } else {
+          defaultSheetDept = 'Nursing Department';
+        }
       }
 
       for (let i = 0; i < rawRows.length; i++) {
@@ -372,8 +415,8 @@ contactsRouter.post('/upload', async (req, res) => {
           const v = String(val).trim();
           if (!v) continue;
 
-          // Check for row-level timing column (e.g. 8:30 or 10:30)
-          if (/timing|time|batch/i.test(k)) {
+          // Check for row-level timing column only if nursing/cbt is in context
+          if (isNursingContext && /timing|time|slot/i.test(k)) {
             if (/8[\s_:]*30/i.test(v)) {
               rawDept = 'Nursing - Batch 1 (8:30 AM)';
             } else if (/10[\s_:]*30/i.test(v)) {
@@ -427,29 +470,40 @@ contactsRouter.post('/upload', async (req, res) => {
         const firstName = nameParts[0] || 'Recipient';
         const lastName = nameParts.slice(1).join(' ') || '';
 
-        // Smart Category Resolution:
+        // Strict & Predictable Category Resolution:
         let categoryId = 'CAT-STU';
         const catVal = (rawCategory || '').toLowerCase();
-        if (isCandidateSheet || catVal.includes('candidate') || catVal.includes('applicant') || catVal.includes('interview')) {
-          categoryId = 'CAT-CAN';
+
+        // 1. Explicit user selection in upload modal takes highest precedence (unless AUTO)
+        if (default_category && String(default_category).toUpperCase() !== 'AUTO' && CATEGORY_MAP[String(default_category).toUpperCase()]) {
+          categoryId = CATEGORY_MAP[String(default_category).toUpperCase()];
+        }
+        // 2. Row-level category column
+        else if (catVal.includes('student')) {
+          categoryId = 'CAT-STU';
         } else if (catVal.includes('teach') || catVal.includes('faculty') || catVal.includes('prof') || catVal.includes('lectur')) {
           categoryId = 'CAT-FAC';
         } else if (catVal.includes('non-teach') || catVal.includes('staff') || catVal.includes('admin') || catVal.includes('office') || catVal.includes('clerk') || catVal.includes('technical')) {
           categoryId = 'CAT-STF';
+        } else if (catVal.includes('candidate') || catVal.includes('applicant') || catVal.includes('interview')) {
+          categoryId = 'CAT-CAN';
         } else if (catVal.includes('alumni') || catVal.includes('graduat')) {
           categoryId = 'CAT-ALM';
-        } else if (catVal.includes('student')) {
+        }
+        // 3. Sheet column indicators (Student takes precedence over Candidate!)
+        else if (isStudentSheet) {
           categoryId = 'CAT-STU';
         } else if (isEmployeeSheet) {
           categoryId = 'CAT-FAC';
-        } else if (isStudentSheet) {
+        } else if (isCandidateSheet) {
+          categoryId = 'CAT-CAN';
+        } else {
+          // Default university fallback is always Enrolled Students
           categoryId = 'CAT-STU';
-        } else if (default_category) {
-          categoryId = CATEGORY_MAP[String(default_category).toUpperCase()] || 'CAT-STU';
         }
 
         // Dynamic Department Resolution:
-        const fallbackDept = isCandidateSheet ? defaultSheetDept : (default_department || 'DEP-CS');
+        const fallbackDept = isNursingContext ? defaultSheetDept : (default_department || 'DEP-CS');
         const deptId = await resolveDepartment(rawDept || fallbackDept);
 
         // External Identifier (real Idno or Regno)
