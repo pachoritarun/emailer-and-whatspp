@@ -11,19 +11,32 @@ const IV_LENGTH = 16; // AES block size
 export function cleanPhoneNumber(rawPhone: any): string {
   if (!rawPhone) return '';
   let str = String(rawPhone).trim();
-  // Remove all non-digits
-  str = str.replace(/\D/g, '');
+  // Strip trailing .0 or .00 from excel numeric conversions
+  str = str.replace(/\.0+$/, '');
+
+  // If cell contains multiple numbers or extra text, extract first 10-digit Indian mobile (starts with 6-9)
+  const mobileMatch = str.match(/(?:(?:\+?91|0)[\s\-]?)?([6-9]\d{9})/);
+  if (mobileMatch && mobileMatch[1]) {
+    return '91' + mobileMatch[1];
+  }
+
+  // Remove all non-digits as fallback
+  const digits = str.replace(/\D/g, '');
 
   // If 10 digits (standard Indian mobile e.g. 9309313044), add country code 91
-  if (str.length === 10) {
-    str = '91' + str;
+  if (digits.length === 10) {
+    return '91' + digits;
   }
   // If starts with 0 and followed by 10 digits
-  if (str.length === 11 && str.startsWith('0')) {
-    str = '91' + str.slice(1);
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return '91' + digits.slice(1);
+  }
+  // If already 12 digits starting with 91
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits;
   }
 
-  return str;
+  return digits;
 }
 
 /**

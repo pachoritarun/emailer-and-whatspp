@@ -3,12 +3,12 @@ import crypto from 'crypto';
 import * as XLSX from 'xlsx';
 import { getMemoryStore, commitStoreMutation, executeQuery } from '../db/pool.js';
 import { AuditService } from '../services/audit.js';
-import { cleanPhoneNumber, hashPhone, encryptPhone } from '../services/crypto.js';
+import { cleanPhoneNumber, hashPhone, encryptPhone, decryptPhone } from '../services/crypto.js';
 import { logger } from '../services/logger.js';
 
 export const contactsRouter = Router();
 
-// GET /api/contacts - Real Sanitized contact directory from MySQL (NO phone numbers exposed)
+// GET /api/contacts - Real Sanitized contact directory from MySQL with masked phone
 contactsRouter.get('/', async (req, res) => {
   try {
     const rawContacts = await executeQuery(`
@@ -16,6 +16,7 @@ contactsRouter.get('/', async (req, res) => {
         c.id, 
         c.external_identifier as external_id, 
         TRIM(CONCAT(c.first_name, ' ', COALESCE(c.last_name, ''))) as name, 
+        c.phone_encrypted,
         cat.name as category, 
         COALESCE(d.name, 'General Department') as department, 
         'OPTED_IN' as status, 
@@ -24,7 +25,7 @@ contactsRouter.get('/', async (req, res) => {
       LEFT JOIN categories cat ON c.category_id = cat.id
       LEFT JOIN departments d ON c.department_id = d.id
       ORDER BY c.created_at DESC
-      LIMIT 200
+      LIMIT 1000
     `);
 
     const rawCounts = await executeQuery(`
@@ -55,11 +56,33 @@ contactsRouter.get('/', async (req, res) => {
       });
     }
 
+    const contacts = Array.isArray(rawContacts) ? rawContacts.map((c: any) => {
+      let phoneMasked = '••••••••••';
+      try {
+        if (c.phone_encrypted) {
+          const dec = decryptPhone(c.phone_encrypted);
+          if (dec && dec.length >= 10) {
+            phoneMasked = `+91 ${dec.slice(-10, -5)} •••${dec.slice(-2)}`;
+          }
+        }
+      } catch (e) {}
+      return {
+        id: c.id,
+        external_id: c.external_id,
+        name: c.name || `Candidate (${c.external_id})`,
+        phone_masked: phoneMasked,
+        category: c.category,
+        department: c.department,
+        status: c.status,
+        created_at: c.created_at
+      };
+    }) : [];
+
     res.json({
       success: true,
       total,
       breakdown,
-      contacts: Array.isArray(rawContacts) ? rawContacts : []
+      contacts
     });
   } catch (err: any) {
     res.json({
@@ -313,6 +336,7 @@ contactsRouter.post('/upload', async (req, res) => {
     let duplicatePhones = 0;
     let totalDetectedRows = 0;
     const seenHashesInBatch = new Set<string>();
+    const seenExtIdsInBatch = new Set<string>();
 
     // 2. Fetch all existing departments for fast in-memory lookup
     const deptRows = await executeQuery('SELECT id, code, name FROM departments');
@@ -425,26 +449,37 @@ contactsRouter.post('/upload', async (req, res) => {
           }
 
           // 1. Institutional / Application ID: Idno, Regno, Application ID, Roll Number, etc.
-          if (/^(idno|id_no|empid|emp_id|employee_id|regno|reg_no|roll|enroll|application[\s_]*id|app[\s_]*id|applicant)/i.test(k) || k === 'id') {
+          if (/^(idno|id_no|empid|emp_id|employee_id|regno|reg_no|registration|roll|enroll|application|app|scholar|admission)[\s_.]*(id|no|num|number)?$/i.test(k) || /^(idno|id_no|empid|emp_id|employee_id|regno|reg_no|roll|enroll|application[\s_]*id|app[\s_]*id|applicant)/i.test(k) || k === 'id') {
             if (!rawRoll) rawRoll = v;
           }
           // 2. Mobile Phone (avoid email columns)
-          else if (/phone|mobile|cell|contact/i.test(k) && !/email/i.test(k)) {
+          else if (/^(phone|mobile|mob|contact|cell|whatsapp|wa|ph)[\s_.]*(no|num|number)?$/i.test(k) || (/phone|mobile|mob|contact|cell|whatsapp/i.test(k) && !/email/i.test(k))) {
             if (!rawPhone) rawPhone = v;
           }
-          // 3. Name (Ignore Session_Name, College, Degree, Department)
-          else if (/^(candidate[\s_]*name|student[\s_]*name|full[\s_]*name|emp[\s_]*name|faculty[\s_]*name|name)$/i.test(k) || (/name/i.test(k) && !/session|college|degree|dept/i.test(k))) {
+          // 3. Name (Ignore Session_Name, College, Degree, Department, Course, Branch, File, Sheet, Position)
+          else if (/^(candidate[\s_]*name|student[\s_]*name|full[\s_]*name|emp[\s_]*name|faculty[\s_]*name|person[\s_]*name|name)$/i.test(k) || (/name/i.test(k) && !/session|college|degree|dept|course|branch|file|sheet|position/i.test(k))) {
             if (!rawName) rawName = v;
           }
           // 4. Role / Staff Type / Category
           else if (/^(category|role|group|stafftype|staff_type)$/i.test(k)) {
             if (!rawCategory) rawCategory = v;
           }
-          // 5. Department / Degree / College / Post
-          else if (/^(dept|department|branch|post|position|designation)$/i.test(k)) {
-            if (!rawDept) rawDept = v;
-          } else if (!rawDept && /^(degree|college)$/i.test(k)) {
+          // 5. Department / Degree / College / Post / Position / Designation
+          else if (/^(dept|department|branch|course|program|degree|college)$/i.test(k)) {
             rawDept = v;
+          } else if (!rawDept && /^(position|position[\s_]*type|designation|post)$/i.test(k)) {
+            rawDept = v;
+          }
+        }
+
+        // Fallback for phone: scan values if column header was unusual
+        if (!rawPhone) {
+          for (const val of Object.values(row)) {
+            const vStr = String(val).trim();
+            if (/(?:(?:\+?91|0)[\s\-]?)?[6-9]\d{9}/.test(vStr) && !/@/.test(vStr)) {
+              rawPhone = vStr;
+              break;
+            }
           }
         }
 
@@ -466,9 +501,17 @@ contactsRouter.post('/upload', async (req, res) => {
         seenHashesInBatch.add(pHash);
 
         // Name extraction
-        const nameParts = (rawName || 'Recipient').trim().split(/\s+/);
-        const firstName = nameParts[0] || 'Recipient';
-        const lastName = nameParts.slice(1).join(' ') || '';
+        let firstName = 'Recipient';
+        let lastName = '';
+        if (rawName) {
+          const nameParts = rawName.trim().split(/\s+/);
+          firstName = nameParts[0] || 'Recipient';
+          lastName = nameParts.slice(1).join(' ') || '';
+        } else {
+          // Meaningful display name when Excel has no name column
+          firstName = rawRoll ? `Candidate (${rawRoll})` : `Recipient ${cleaned.slice(-4)}`;
+          lastName = '';
+        }
 
         // Strict & Predictable Category Resolution:
         let categoryId = 'CAT-STU';
@@ -506,12 +549,22 @@ contactsRouter.post('/upload', async (req, res) => {
         const fallbackDept = isNursingContext ? defaultSheetDept : (default_department || 'DEP-CS');
         const deptId = await resolveDepartment(rawDept || fallbackDept);
 
-        // External Identifier (real Idno or Regno)
-        const extId = rawRoll || `UNI-${Date.now().toString().slice(-6)}-${String(i + 1).padStart(3, '0')}`;
+        // Guarantee unique external identifier even when multiple numbers share the same Application ID
+        const baseRoll = rawRoll || `UNI-${Date.now().toString().slice(-6)}`;
+        let extId = baseRoll;
+        if (seenExtIdsInBatch.has(extId)) {
+          let suffix = 2;
+          while (seenExtIdsInBatch.has(`${baseRoll}-${suffix}`)) {
+            suffix++;
+          }
+          extId = `${baseRoll}-${suffix}`;
+        }
+        seenExtIdsInBatch.add(extId);
+
         const contactId = crypto.randomUUID();
         const pEncrypted = encryptPhone(cleaned);
 
-        // Insert into MySQL contacts table (cleanly purging any stale conflicting records by external_identifier or phone_hash)
+        // Insert into MySQL contacts table (cleanly purging stale conflicting records by external_identifier or phone_hash)
         try {
           await executeQuery('DELETE FROM contacts WHERE external_identifier = ? OR phone_hash = ?', [extId, pHash]);
 

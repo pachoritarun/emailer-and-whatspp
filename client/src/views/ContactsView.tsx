@@ -329,6 +329,7 @@ export const ContactsView: React.FC = () => {
               <tr>
                 <th>Institutional ID / Roll No</th>
                 <th>Full Name</th>
+                <th>Mobile (Masked)</th>
                 <th>Target Category</th>
                 <th>Department</th>
                 <th>WhatsApp Consent</th>
@@ -339,7 +340,7 @@ export const ContactsView: React.FC = () => {
             <tbody>
               {contacts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--uni-muted)' }}>
+                  <td colSpan={8} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--uni-muted)' }}>
                     <Users size={36} color="var(--uni-muted)" style={{ margin: '0 auto 10px' }} />
                     <div style={{ fontWeight: 700, color: 'var(--uni-black)', fontSize: '0.95rem', marginBottom: '4px' }}>
                       No Contacts Enrolled Yet
@@ -367,6 +368,9 @@ export const ContactsView: React.FC = () => {
                     </td>
                     <td style={{ fontWeight: 600 }}>
                       {c.name}
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: '#1E40AF', fontWeight: 600 }}>
+                      {c.phone_masked || '••••••••••'}
                     </td>
                     <td>
                       <span style={{

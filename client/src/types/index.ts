@@ -112,6 +112,7 @@ export interface ContactItem {
   id: string;
   external_id: string;
   name: string;
+  phone_masked?: string;
   category: string;
   department: string;
   status: string;
