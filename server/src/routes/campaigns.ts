@@ -202,6 +202,18 @@ campaignRouter.post('/launch', async (req, res) => {
   const activeLanguage = template_language || (template ? template.language : 'en');
   const tplId = template?.id || `TPL-${activeTemplateName.toUpperCase()}`;
 
+  const updatedTpl = {
+    id: tplId,
+    name: activeTemplateName,
+    category: activeCategory as any,
+    language: activeLanguage,
+    header_type: 'NONE' as any,
+    body_text: activeTemplateBody,
+    footer_text: '',
+    status: 'APPROVED' as any
+  };
+  template = updatedTpl;
+
   // Automatically save/upsert template in MySQL so it appears in the portal template list permanently
   try {
     await executeQuery(`
@@ -224,22 +236,11 @@ campaignRouter.post('/launch', async (req, res) => {
     ]);
 
     const existingIdx = store.message_templates.findIndex(t => t.name === activeTemplateName);
-    const updatedTpl = {
-      id: tplId,
-      name: activeTemplateName,
-      category: activeCategory as any,
-      language: activeLanguage,
-      header_type: 'NONE' as any,
-      body_text: activeTemplateBody,
-      footer_text: '',
-      status: 'APPROVED' as any
-    };
     if (existingIdx >= 0) {
       store.message_templates[existingIdx] = updatedTpl;
     } else {
       store.message_templates.unshift(updatedTpl);
     }
-    template = updatedTpl;
   } catch (err: any) {
     console.warn('Template auto-save notice:', err.message);
   }

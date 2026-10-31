@@ -88,7 +88,7 @@ contactsRouter.get('/', async (req, res) => {
     res.json({
       success: true,
       total: 0,
-      breakdown: { students: 0, faculty: 0, staff: 0, alumni: 0 },
+      breakdown: { students: 0, faculty: 0, staff: 0, alumni: 0, candidates: 0 },
       contacts: []
     });
   }
@@ -189,7 +189,7 @@ contactsRouter.get('/departments', async (req, res) => {
         COUNT(c.id) as contact_count
       FROM departments d
       LEFT JOIN contacts c ON d.id = c.department_id
-      GROUP BY d.id
+      GROUP BY d.id, d.code, d.name
       ORDER BY d.name ASC
     `);
     res.json({
@@ -550,7 +550,7 @@ contactsRouter.post('/upload', async (req, res) => {
         const deptId = await resolveDepartment(rawDept || fallbackDept);
 
         // Guarantee unique external identifier even when multiple numbers share the same Application ID
-        const baseRoll = rawRoll || `UNI-${Date.now().toString().slice(-6)}`;
+        const baseRoll = rawRoll || `UNI-${Date.now().toString().slice(-6)}-${String(i + 1).padStart(3, '0')}`;
         let extId = baseRoll;
         if (seenExtIdsInBatch.has(extId)) {
           let suffix = 2;

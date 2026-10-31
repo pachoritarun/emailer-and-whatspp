@@ -7,7 +7,7 @@ let mysqlHost = process.env.MYSQL_HOST || '127.0.0.1';
 let mysqlPort = parseInt(process.env.MYSQL_PORT || '3306', 10);
 let mysqlUser = process.env.MYSQL_USER || 'root';
 let mysqlPassword = process.env.MYSQL_PASSWORD || '';
-let mysqlDatabase = process.env.MYSQL_DATABASE || 'jubot';
+let mysqlDatabase = process.env.MYSQL_DATABASE || 'Communication_DB';
 
 if (process.env.DATABASE_URL) {
   try {

@@ -59,7 +59,9 @@ export class WhatsAppProviderService {
 
     // Normalize phone number per Meta standard: include both '+' and country calling code (e.g. +919309313044)
     let cleanDigits = (params.recipientPhone || '919876543210').replace(/\D/g, '');
-    if (cleanDigits.length === 10) {
+    if (cleanDigits.length === 11 && cleanDigits.startsWith('0')) {
+      cleanDigits = '91' + cleanDigits.slice(1);
+    } else if (cleanDigits.length === 10) {
       cleanDigits = '91' + cleanDigits;
     }
     const toPhone = `+${cleanDigits}`;

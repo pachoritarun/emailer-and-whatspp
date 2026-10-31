@@ -35,9 +35,15 @@ templatesRouter.get('/', async (req, res) => {
         header_type: t.header_type,
         body: t.body,
         footer_text: t.footer_text || '',
-        sampleVariables: typeof t.sample_variables === 'string'
-          ? JSON.parse(t.sample_variables)
-          : (Array.isArray(t.sample_variables) ? t.sample_variables : []),
+        sampleVariables: (() => {
+          try {
+            if (typeof t.sample_variables === 'string' && t.sample_variables.trim()) {
+              return JSON.parse(t.sample_variables);
+            }
+            if (Array.isArray(t.sample_variables)) return t.sample_variables;
+          } catch (e) {}
+          return [];
+        })(),
         status: t.status
       }));
     } else {

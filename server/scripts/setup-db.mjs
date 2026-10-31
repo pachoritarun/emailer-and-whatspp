@@ -13,13 +13,14 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 async function run() {
   console.log('🔄 Initializing University Portal Database on Local MySQL...');
 
-  const dbUrl = process.env.DATABASE_URL || 'mysql://root:Mysqlserver469@localhost:3306/university_portal';
+  const defaultDb = process.env.MYSQL_DATABASE || 'Communication_DB';
+  const dbUrl = process.env.DATABASE_URL || `mysql://root:Mysqlserver469@localhost:3306/${defaultDb}`;
   const parsed = new URL(dbUrl);
   const host = parsed.hostname || 'localhost';
   const port = parsed.port ? parseInt(parsed.port, 10) : 3306;
   const user = parsed.username || 'root';
   const password = decodeURIComponent(parsed.password || '');
-  const database = parsed.pathname.replace(/^\//, '') || 'university_portal';
+  const database = parsed.pathname.replace(/^\//, '') || defaultDb;
 
   console.log(`📡 Connecting to MySQL at ${host}:${port} as user '${user}'...`);
 
