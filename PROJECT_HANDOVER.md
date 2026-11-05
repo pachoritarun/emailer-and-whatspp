@@ -340,3 +340,4 @@ mysql -u root -pMysqlserver469 Communication_DB -e "
 - [ ] `pm2 save` has been executed so processes resurrect after server reboot.
 - [ ] New templates created in WhatsApp Manager must match the template name in the portal (lowercase, underscores only).
 - [ ] All PDF media circulars must be placed in `/server/public/` and served via `/api/media/<filename>.pdf`.
+
