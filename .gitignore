@@ -21,6 +21,8 @@ data/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+scratch/
+*.xlsx
 
 # Nested legacy repo folder
 emailer-and-whatspp/
